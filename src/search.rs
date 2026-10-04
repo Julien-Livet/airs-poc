@@ -68,6 +68,13 @@ pub fn generate(
                         Value::Integer(*value),
                     ));
                 }
+
+                programs.extend(
+                    generate_inputs(
+                        output_type,
+                        inputs,
+                    )
+                );
             }
 
             Type::Grid
@@ -389,5 +396,74 @@ mod tests
                     == "crop(I, ulcorner(S), lrcorner(S))"
             })
         );
+    }
+
+    #[test]
+    fn add_overloads_are_generated_from_typed_inputs() {
+        let terminals = Terminals {
+            integers: vec![],
+        };
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Integer,
+            },
+            InputSpec {
+                name: "T".to_string(),
+                ty: Type::IntegerTuple,
+            },
+        ];
+
+        let programs = generate(
+            Type::IntegerTuple,
+            1,
+            &terminals,
+            &inputs,
+        );
+
+        let expressions: std::collections::BTreeSet<_> = programs
+            .iter()
+            .map(|program| program.expression())
+            .collect();
+
+        for expression in &expressions {
+            println!("{expression}");
+        }
+    }
+
+    #[test]
+    fn integer_add_is_generated_from_typed_inputs() {
+        let terminals = Terminals {
+            integers: vec![],
+        };
+
+        let inputs = vec![
+            InputSpec {
+                name: "A".to_string(),
+                ty: Type::Integer,
+            },
+            InputSpec {
+                name: "B".to_string(),
+                ty: Type::Integer,
+            },
+        ];
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &inputs,
+        );
+
+        let expressions: std::collections::BTreeSet<_> = programs
+            .iter()
+            .map(|program| program.expression())
+            .collect();
+
+        assert!(expressions.contains("add(A, A)"));
+        assert!(expressions.contains("add(A, B)"));
+        assert!(expressions.contains("add(B, A)"));
+        assert!(expressions.contains("add(B, B)"));
     }
 }
