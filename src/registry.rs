@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 
 use crate::primitives;
-use crate::types::{Grid, Integer};
+use crate::types::{Grid, Indices, Integer, IntegerTuple};
 
 pub trait HasType {
     const TYPE: Type;
@@ -13,6 +13,14 @@ impl HasType for Integer {
 
 impl HasType for Grid {
     const TYPE: Type = Type::Grid;
+}
+
+impl HasType for IntegerTuple {
+    const TYPE: Type = Type::IntegerTuple;
+}
+
+impl HasType for Indices {
+    const TYPE: Type = Type::Indices;
 }
 
 macro_rules! register_primitive {
@@ -71,6 +79,29 @@ macro_rules! register_binary_primitive {
     };
 }
 
+macro_rules! register_ternary_primitive {
+    (
+        $static_name:ident,
+        $wrapper_name:ident,
+        $name:expr,
+        $function:path
+    ) => {
+        fn $wrapper_name(
+            args: &[Value],
+        ) -> Result<Value, String> {
+            call_ternary(args, $function)
+        }
+
+        register_primitive!(
+            $static_name,
+            PrimitiveEntry::from_descriptor(
+                ternary_descriptor($name, $function),
+                $wrapper_name,
+            )
+        );
+    };
+}
+
 pub struct PrimitiveDescriptor {
     pub name: &'static str,
     pub inputs: &'static [Type],
@@ -115,6 +146,36 @@ impl IntoValue for Grid {
     }
 }
 
+impl FromValue for IntegerTuple {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::IntegerTuple(value) => Ok(*value),
+            _ => Err("expected IntegerTuple".to_string()),
+        }
+    }
+}
+
+impl IntoValue for IntegerTuple {
+    fn into_value(self) -> Value {
+        Value::IntegerTuple(self)
+    }
+}
+
+impl FromValue for Indices {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Indices(value) => Ok(value.clone()),
+            _ => Err("expected Indices".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Indices {
+    fn into_value(self) -> Value {
+        Value::Indices(self)
+    }
+}
+
 pub const fn unary_descriptor<A, R>(
     name: &'static str,
     _function: fn(A) -> R,
@@ -142,6 +203,23 @@ where
     PrimitiveDescriptor {
         name,
         inputs: &[A::TYPE, B::TYPE],
+        output: R::TYPE,
+    }
+}
+
+pub const fn ternary_descriptor<A, B, C, R>(
+    name: &'static str,
+    _function: fn(A, B, C) -> R,
+) -> PrimitiveDescriptor
+where
+    A: HasType,
+    B: HasType,
+    C: HasType,
+    R: HasType,
+{
+    PrimitiveDescriptor {
+        name,
+        inputs: &[A::TYPE, B::TYPE, C::TYPE],
         output: R::TYPE,
     }
 }
@@ -188,10 +266,36 @@ where
     Ok(function(a, b).into_value())
 }
 
+pub fn call_ternary<A, B, C, R>(
+    args: &[Value],
+    function: fn(A, B, C) -> R,
+) -> Result<Value, String>
+where
+    A: FromValue,
+    B: FromValue,
+    C: FromValue,
+    R: IntoValue,
+{
+    if args.len() != 3 {
+        return Err(format!(
+            "expected 3 arguments, got {}",
+            args.len()
+        ));
+    }
+
+    let a = A::from_value(&args[0])?;
+    let b = B::from_value(&args[1])?;
+    let c = C::from_value(&args[2])?;
+
+    Ok(function(a, b, c).into_value())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
     Integer,
     Grid,
+    IntegerTuple,
+    Indices,
 }
 
 
@@ -199,6 +303,8 @@ pub enum Type {
 pub enum Value {
     Integer(Integer),
     Grid(Grid),
+    IntegerTuple(IntegerTuple),
+    Indices(Indices),
 }
 
 
@@ -283,6 +389,41 @@ register_binary_primitive!(
     primitives::vconcat
 );
 
+register_unary_primitive!(
+    ULCORNER,
+    ulcorner_dyn_generated,
+    "ulcorner",
+    primitives::ulcorner
+);
+
+register_unary_primitive!(
+    URCORNER,
+    urcorner_dyn_generated,
+    "urcorner",
+    primitives::urcorner
+);
+
+register_unary_primitive!(
+    LLCORNER,
+    llcorner_dyn_generated,
+    "llcorner",
+    primitives::llcorner
+);
+
+register_unary_primitive!(
+    LRCORNER,
+    lrcorner_dyn_generated,
+    "lrcorner",
+    primitives::lrcorner
+);
+
+register_ternary_primitive!(
+    CROP,
+    crop_dyn_generated,
+    "crop",
+    primitives::crop
+);
+
 #[cfg(test)]
 mod tests
 {
@@ -291,9 +432,12 @@ mod tests
         Type,
         unary_descriptor,
         binary_descriptor,
+        ternary_descriptor,
         call_unary,
+        call_ternary,
         Value,
         PRIMITIVES,
+        find_compatible,
     };
     use crate::{primitives, registry::hmirror_dyn_generated};
 
@@ -363,7 +507,52 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 4);
+        assert_eq!(PRIMITIVES.len(), 9);
+
+        assert!(
+            PRIMITIVES.iter().any(|primitive| {
+                primitive.name == "crop"
+                    && primitive.inputs
+                        == [
+                            Type::Grid,
+                            Type::IntegerTuple,
+                            Type::IntegerTuple,
+                        ]
+                    && primitive.output == Type::Grid
+            })
+        );
+
+        assert!(
+            PRIMITIVES.iter().any(|primitive| {
+                primitive.name == "ulcorner"
+                    && primitive.inputs == [Type::Indices]
+                    && primitive.output == Type::IntegerTuple
+            })
+        );
+
+        assert!(
+            PRIMITIVES.iter().any(|primitive| {
+                primitive.name == "urcorner"
+                    && primitive.inputs == [Type::Indices]
+                    && primitive.output == Type::IntegerTuple
+            })
+        );
+
+        assert!(
+            PRIMITIVES.iter().any(|primitive| {
+                primitive.name == "llcorner"
+                    && primitive.inputs == [Type::Indices]
+                    && primitive.output == Type::IntegerTuple
+            })
+        );
+
+        assert!(
+            PRIMITIVES.iter().any(|primitive| {
+                primitive.name == "lrcorner"
+                    && primitive.inputs == [Type::Indices]
+                    && primitive.output == Type::IntegerTuple
+            })
+        );
 
         assert!(PRIMITIVES.iter().any(|p| {
             p.name == "add"
@@ -422,5 +611,86 @@ mod tests
             }
             _ => panic!("expected Grid"),
         }
+    }
+
+    #[test]
+    fn registered_corner_can_be_applied_dynamically() {
+        let primitive = PRIMITIVES
+            .iter()
+            .find(|primitive| primitive.name == "ulcorner")
+            .expect("ulcorner should be registered");
+
+        let indices = std::collections::BTreeSet::from([
+            (2, 5),
+            (4, 1),
+            (7, 9),
+        ]);
+
+        let result = (primitive.apply)(&[
+            Value::Indices(indices),
+        ])
+        .expect("ulcorner should apply successfully");
+
+        assert!(matches!(
+            result,
+            Value::IntegerTuple((2, 1))
+        ));
+    }
+
+    #[test]
+    fn ternary_descriptor_infers_types() {
+        let descriptor = ternary_descriptor(
+            "crop",
+            primitives::crop,
+        );
+
+        assert_eq!(descriptor.name, "crop");
+        assert_eq!(
+            descriptor.inputs,
+            &[Type::Grid, Type::IntegerTuple, Type::IntegerTuple]
+        );
+        assert_eq!(descriptor.output, Type::Grid);
+    }
+
+    #[test]
+    fn ternary_call_adapter_can_be_generated_from_function() {
+        let grid = vec![
+            vec![1, 2, 3, 4, 5],
+            vec![6, 7, 8, 9, 0],
+            vec![1, 2, 3, 4, 5],
+            vec![6, 7, 8, 9, 0],
+        ];
+
+        let result = call_ternary(
+            &[
+                Value::Grid(grid),
+                Value::IntegerTuple((1, 1)),
+                Value::IntegerTuple((2, 3)),
+            ],
+            primitives::crop,
+        )
+        .expect("crop should apply successfully");
+
+        assert!(matches!(
+            result,
+            Value::Grid(grid)
+                if grid == vec![
+                    vec![7, 8, 9],
+                    vec![2, 3, 4],
+                ]
+        ));
+    }
+
+    #[test]
+    fn crop_is_found_by_input_signature() {
+        let matches = find_compatible(&[
+            Type::Grid,
+            Type::IntegerTuple,
+            Type::IntegerTuple,
+        ]);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].name, "crop");
+        assert_eq!(matches[0].output, Type::Grid);
     }
 }
