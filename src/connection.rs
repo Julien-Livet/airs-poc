@@ -197,6 +197,8 @@ impl Connection {
                 match value {
                     Value::Integer(value) => value.to_string(),
                     Value::Grid(_) => "Grid(...)".to_string(),
+                    Value::IntegerTuple(value) => format!("{value:?}"),
+                    Value::Indices(value) => format!("{value:?}"),
                 }
             }
 
@@ -218,6 +220,8 @@ impl Value {
         match self {
             Value::Integer(_) => Type::Integer,
             Value::Grid(_) => Type::Grid,
+            Value::IntegerTuple(_) => Type::IntegerTuple,
+            Value::Indices(_) => Type::Indices,
         }
     }
 }
@@ -228,6 +232,7 @@ mod tests {
     use crate::registry::Type;
     use crate::search::{generate, semantic_signature, generate_inputs};
     use crate::signature::InputSpec;
+    use crate::registry::{PRIMITIVES, Value};
 
     #[test]
     fn integer_generation_has_expected_cardinality() {
@@ -810,6 +815,119 @@ mod tests {
         assert!(matches!(
             dataset.environments[0].get("J"),
             Some(Value::Grid(grid)) if *grid == grid_j
+        ));
+    }
+
+    #[test]
+    fn indices_connection_can_feed_ulcorner() {
+        let primitive = crate::registry::PRIMITIVES
+            .iter()
+            .find(|primitive| primitive.name == "ulcorner")
+            .expect("ulcorner should be registered");
+
+        let indices = std::collections::BTreeSet::from([
+            (2, 5),
+            (4, 1),
+            (7, 9),
+        ]);
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::terminal(
+                    Value::Indices(indices),
+                )),
+            ],
+        )
+        .expect("connection should be valid");
+
+        let result = connection
+            .output()
+            .expect("connection should evaluate");
+
+        assert!(matches!(
+            result,
+            Value::IntegerTuple((2, 1))
+        ));
+    }
+
+    #[test]
+    fn all_corner_connections_produce_expected_values() {
+        let indices = std::collections::BTreeSet::from([
+            (2, 5),
+            (4, 1),
+            (7, 9),
+        ]);
+
+        let cases = [
+            ("ulcorner", (2, 1)),
+            ("urcorner", (2, 9)),
+            ("llcorner", (7, 1)),
+            ("lrcorner", (7, 9)),
+        ];
+
+        for (name, expected) in cases {
+            let primitive = crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| primitive.name == name)
+                .expect("corner should be registered");
+
+            let connection = Connection::new(
+                primitive,
+                vec![
+                    Box::new(Connection::terminal(
+                        Value::Indices(indices.clone()),
+                    )),
+                ],
+            )
+            .expect("connection should be valid");
+
+            let result = connection
+                .output()
+                .expect("connection should evaluate");
+
+            assert!(
+                matches!(result, Value::IntegerTuple(value) if value == expected),
+                "unexpected result for {name}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn crop_connection_can_be_evaluated() {
+        let grid = vec![
+            vec![1, 2, 3, 4, 5],
+            vec![6, 7, 8, 9, 0],
+            vec![1, 2, 3, 4, 5],
+            vec![6, 7, 8, 9, 0],
+        ];
+
+        let crop = PRIMITIVES
+            .iter()
+            .find(|primitive| primitive.name == "crop")
+            .expect("crop should be registered");
+
+        let connection = Connection::new(
+            crop,
+            vec![
+                Box::new(Connection::terminal(Value::Grid(grid))),
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((1, 1)),
+                )),
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((2, 3)),
+                )),
+            ],
+        )
+        .expect("crop connection should be valid");
+
+        assert!(matches!(
+            connection.output(),
+            Ok(Value::Grid(grid))
+                if grid == vec![
+                    vec![7, 8, 9],
+                    vec![2, 3, 4],
+                ]
         ));
     }
 }
