@@ -61,34 +61,23 @@ pub fn generate(
     let mut programs = Vec::new();
 
     if depth == 0 {
-        match output_type {
-            Type::Integer => {
-                for value in &terminals.integers {
-                    programs.push(Connection::terminal(
-                        Value::Integer(*value),
-                    ));
-                }
-
-                programs.extend(
-                    generate_inputs(
-                        output_type,
-                        inputs,
-                    )
-                );
-            }
-
-            Type::Grid
-            | Type::IntegerTuple
-            | Type::Indices
-            | Type::Object => {
-                programs.extend(
-                    generate_inputs(
-                        output_type,
-                        inputs,
+        for terminal in &terminals.values {
+            if terminal.value.ty() == output_type {
+                programs.push(
+                    Connection::named_terminal(
+                        terminal.name,
+                        terminal.value.clone(),
                     )
                 );
             }
         }
+
+        programs.extend(
+            generate_inputs(
+                output_type,
+                inputs,
+            )
+        );
 
         return programs;
     }
@@ -231,11 +220,12 @@ pub fn semantic_signature(
 mod tests
 {
     use super::*;
+    use crate::NamedTerminal;
 
     #[test]
     fn crop_can_be_generated_from_typed_inputs() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -279,7 +269,7 @@ mod tests
     #[test]
     fn integer_tuple_generation_uses_typed_inputs() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -322,7 +312,7 @@ mod tests
     #[test]
     fn corner_programs_can_be_generated_from_indices_input() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -369,7 +359,7 @@ mod tests
     #[test]
     fn crop_can_be_composed_with_corners() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -401,7 +391,7 @@ mod tests
     #[test]
     fn add_overloads_are_generated_from_typed_inputs() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -436,7 +426,7 @@ mod tests
     #[test]
     fn integer_add_is_generated_from_typed_inputs() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -466,5 +456,283 @@ mod tests
         assert!(expressions.contains("add(A, B)"));
         assert!(expressions.contains("add(B, A)"));
         assert!(expressions.contains("add(B, B)"));
+    }
+
+    #[test]
+    fn integer_tuple_generation_uses_tuple_terminals() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new("ORIGIN", Value::IntegerTuple((0, 0))),
+                NamedTerminal::new("UP", Value::IntegerTuple((1, 0))),
+                NamedTerminal::new("RIGHT", Value::IntegerTuple((0, 1))),
+            ],
+        };
+
+        let inputs = vec![];
+
+        let programs = generate(
+            Type::IntegerTuple,
+            0,
+            &terminals,
+            &inputs,
+        );
+
+        let expressions: std::collections::BTreeSet<_> = programs
+            .iter()
+            .map(|program| program.expression())
+            .collect();
+
+        assert_eq!(programs.len(), 3);
+
+        assert!(expressions.contains("ORIGIN"));
+        assert!(expressions.contains("UP"));
+        assert!(expressions.contains("RIGHT"));
+    }
+
+    #[test]
+    fn arc_agi_terminals_are_named_and_typed() {
+        let terminals = Terminals::arc_agi();
+
+        assert_eq!(terminals.values.len(), 28);
+
+        assert!(terminals.values.iter().any(|terminal| {
+            terminal.name == "ZERO"
+                && matches!(terminal.value, Value::Integer(0))
+        }));
+
+        assert!(terminals.values.iter().any(|terminal| {
+            terminal.name == "NEG_TWO"
+                && matches!(terminal.value, Value::Integer(-2))
+        }));
+
+        assert!(terminals.values.iter().any(|terminal| {
+            terminal.name == "ORIGIN"
+                && matches!(terminal.value, Value::IntegerTuple((0, 0)))
+        }));
+
+        assert!(terminals.values.iter().any(|terminal| {
+            terminal.name == "UP"
+                && matches!(terminal.value, Value::IntegerTuple((1, 0)))
+        }));
+
+        assert!(terminals.values.iter().any(|terminal| {
+            terminal.name == "THREE_BY_THREE"
+                && matches!(terminal.value, Value::IntegerTuple((3, 3)))
+        }));
+    }
+
+    #[test]
+    fn named_integer_terminal_is_generated() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::Integer,
+            0,
+            &terminals,
+            &[],
+        );
+
+        assert!(programs.iter().any(|program| {
+            program.expression() == "TWO"
+        }));
+    }
+
+    #[test]
+    fn named_terminals_can_be_composed() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &[],
+        );
+
+        let program = programs
+            .into_iter()
+            .find(|program| {
+                program.expression() == "add(TWO, ONE)"
+            })
+            .expect("expected add(TWO, ONE) to be generated");
+
+        let environment = InputEnvironment::new();
+
+        let result = program
+            .output_with_inputs(&environment)
+            .expect("expected program to evaluate");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 3),
+            _ => panic!("expected Integer result"),
+        }
+    }
+
+    #[test]
+    fn named_integer_tuple_terminal_is_generated() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::IntegerTuple,
+            0,
+            &terminals,
+            &[],
+        );
+
+        let program = programs
+            .into_iter()
+            .find(|program| {
+                program.expression() == "UP"
+            })
+            .expect("expected UP to be generated");
+
+        let result = program
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("expected program to evaluate");
+
+        match result {
+            Value::IntegerTuple(value) => {
+                assert_eq!(value, (1, 0));
+            }
+            _ => panic!("expected IntegerTuple result"),
+        }
+    }
+
+    #[test]
+    fn named_integer_tuple_terminals_can_be_composed() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::IntegerTuple,
+            1,
+            &terminals,
+            &[],
+        );
+
+        let program = programs
+            .into_iter()
+            .find(|program| {
+                program.expression() == "add(UP, RIGHT)"
+            })
+            .expect("expected add(UP, RIGHT) to be generated");
+
+        let result = program
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("expected program to evaluate");
+
+        match result {
+            Value::IntegerTuple(value) => {
+                assert_eq!(value, (1, 1));
+            }
+            _ => panic!("expected IntegerTuple result"),
+        }
+    }
+
+    #[test]
+    fn named_terminals_are_filtered_by_type() {
+        let terminals = Terminals::arc_agi();
+
+        let integers = generate(
+            Type::Integer,
+            0,
+            &terminals,
+            &[],
+        );
+
+        assert!(integers.iter().all(|program| {
+            matches!(
+                program.output_with_inputs(&InputEnvironment::new()),
+                Ok(Value::Integer(_))
+            )
+        }));
+
+        let integer_tuples = generate(
+            Type::IntegerTuple,
+            0,
+            &terminals,
+            &[],
+        );
+
+        assert!(integer_tuples.iter().all(|program| {
+            matches!(
+                program.output_with_inputs(&InputEnvironment::new()),
+                Ok(Value::IntegerTuple(_))
+            )
+        }));
+    }
+
+    #[test]
+    fn boolean_terminals_are_generated() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::Boolean,
+            0,
+            &terminals,
+            &[],
+        );
+
+        assert!(programs.iter().any(|program| {
+            program.expression() == "F"
+        }));
+
+        assert!(programs.iter().any(|program| {
+            program.expression() == "T"
+        }));
+    }
+
+    #[test]
+    fn flip_can_be_generated_from_boolean_terminal() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::Boolean,
+            1,
+            &terminals,
+            &[],
+        );
+
+        let program = programs
+            .into_iter()
+            .find(|program| {
+                program.expression() == "flip(F)"
+            })
+            .expect("expected flip(F) to be generated");
+
+        let result = program
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("expected program to evaluate");
+
+        match result {
+            Value::Boolean(value) => assert!(value),
+            _ => panic!("expected Boolean result"),
+        }
+    }
+
+    #[test]
+    fn flip_true_terminal_evaluates_to_false() {
+        let terminals = Terminals::arc_agi();
+
+        let programs = generate(
+            Type::Boolean,
+            1,
+            &terminals,
+            &[],
+        );
+
+        let program = programs
+            .into_iter()
+            .find(|program| {
+                program.expression() == "flip(T)"
+            })
+            .expect("expected flip(T) to be generated");
+
+        let result = program
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("expected program to evaluate");
+
+        match result {
+            Value::Boolean(value) => assert!(!value),
+            _ => panic!("expected Boolean result"),
+        }
     }
 }
