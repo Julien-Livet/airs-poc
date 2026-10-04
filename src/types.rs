@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+pub type Boolean = bool;
 pub type Integer = i16;
 pub type IntegerTuple = (Integer, Integer);
 
