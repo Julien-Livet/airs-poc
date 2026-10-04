@@ -1,5 +1,9 @@
 use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
 
+pub fn flip(value: bool) -> bool {
+    !value
+}
+
 pub fn add(a: Integer, b: Integer) -> Integer {
     let c = a + b;
 
