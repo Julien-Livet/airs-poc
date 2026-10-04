@@ -5,8 +5,14 @@ pub fn add(a: Integer, b: Integer) -> Integer {
 }
 
 pub fn hmirror(mut grid: Grid) -> Grid {
+    let original = grid.clone();
+
     for row in &mut grid {
         row.reverse();
+    }
+
+    if grid == original {
+        panic!("hmirror produced identity");
     }
 
     grid
@@ -109,12 +115,16 @@ pub fn hmirror_object(object: Object) -> Object {
 
     let d = y_min + y_max;
 
-    object
-        .into_iter()
-        .map(|(value, (y, x))| {
-            (value, (d - y, x))
-        })
-        .collect()
+    let result: Object = object
+        .iter()
+        .map(|(value, (y, x))| (*value, (d - y, *x)))
+        .collect();
+
+    if result == object {
+        panic!("hmirror produced identity");
+    }
+
+    result
 }
 
 pub fn hmirror_indices(indices: Indices) -> Indices {
@@ -127,10 +137,16 @@ pub fn hmirror_indices(indices: Indices) -> Indices {
 
     let d = y_min + y_max;
 
-    indices
-        .into_iter()
-        .map(|(y, x)| (d - y, x))
-        .collect()
+    let result: Indices = indices
+        .iter()
+        .map(|(y, x)| (d - y, *x))
+        .collect();
+
+    if result == indices {
+        panic!("hmirror produced identity");
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -214,5 +230,38 @@ mod tests {
                 (2, 9),
             ])
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "hmirror produced identity")]
+    fn hmirror_indices_rejects_identity() {
+        let indices: Indices = BTreeSet::from([
+            (2, 5),
+            (4, 5),
+        ]);
+
+        hmirror_indices(indices);
+    }
+
+    #[test]
+    #[should_panic(expected = "hmirror produced identity")]
+    fn hmirror_object_rejects_identity() {
+        let object: Object = BTreeSet::from([
+            (1, (2, 5)),
+            (1, (4, 5)),
+        ]);
+
+        hmirror_object(object);
+    }
+
+    #[test]
+    #[should_panic(expected = "hmirror produced identity")]
+    fn hmirror_grid_rejects_identity() {
+        let grid = vec![
+            vec![1, 2, 1],
+            vec![3, 4, 3],
+        ];
+
+        hmirror(grid);
     }
 }
