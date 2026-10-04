@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 
 use crate::primitives;
-use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
+use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
 
 pub trait HasType {
     const TYPE: Type;
@@ -25,6 +25,10 @@ impl HasType for Indices {
 
 impl HasType for Object {
     const TYPE: Type = Type::Object;
+}
+
+impl HasType for Boolean {
+    const TYPE: Type = Type::Boolean;
 }
 
 macro_rules! register_primitive {
@@ -195,6 +199,21 @@ impl IntoValue for Object {
     }
 }
 
+impl FromValue for Boolean {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Boolean(value) => Ok(*value),
+            _ => Err("expected Boolean".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Boolean {
+    fn into_value(self) -> Value {
+        Value::Boolean(self)
+    }
+}
+
 pub const fn unary_descriptor<A, R>(
     name: &'static str,
     _function: fn(A) -> R,
@@ -311,6 +330,7 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
+    Boolean,
     Integer,
     Grid,
     IntegerTuple,
@@ -321,6 +341,7 @@ pub enum Type {
 
 #[derive(Debug, Clone)]
 pub enum Value {
+    Boolean(Boolean),
     Integer(Integer),
     Grid(Grid),
     IntegerTuple(IntegerTuple),
@@ -394,6 +415,7 @@ pub fn find_by_name_and_inputs(
         })
 }
 
+
 register_binary_primitive!(
     ADD,
     add_dyn_generated,
@@ -420,6 +442,13 @@ register_binary_primitive!(
     add_tuple_integer_dyn_generated,
     "add",
     primitives::add_tuple_integer
+);
+
+register_unary_primitive!(
+    FLIP,
+    flip_dyn_generated,
+    "flip",
+    primitives::flip
 );
 
 register_unary_primitive!(
@@ -569,7 +598,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 13);
+        assert_eq!(PRIMITIVES.len(), 14);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -826,5 +855,14 @@ mod tests
             &[Type::IntegerTuple, Type::Integer]
         );
         assert_eq!(tuple_integer.output, Type::IntegerTuple);
+    }
+
+    #[test]
+    fn value_reports_its_type() {
+        assert_eq!(Value::Integer(2).ty(), Type::Integer);
+        assert_eq!(
+            Value::IntegerTuple((1, 2)).ty(),
+            Type::IntegerTuple
+        );
     }
 }
