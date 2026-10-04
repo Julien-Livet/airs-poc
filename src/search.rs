@@ -427,9 +427,10 @@ mod tests
             .map(|program| program.expression())
             .collect();
 
-        for expression in &expressions {
-            println!("{expression}");
-        }
+        assert!(expressions.contains("add(I, T)"));
+        assert!(expressions.contains("add(T, I)"));
+        assert!(expressions.contains("add(T, T)"));
+        assert!(!expressions.contains("add(I, I)"));
     }
 
     #[test]
