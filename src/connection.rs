@@ -199,6 +199,7 @@ impl Connection {
                     Value::Grid(_) => "Grid(...)".to_string(),
                     Value::IntegerTuple(value) => format!("{value:?}"),
                     Value::Indices(value) => format!("{value:?}"),
+                    Value::Object(value) => format!("{value:?}"),
                 }
             }
 
@@ -222,6 +223,7 @@ impl Value {
             Value::Grid(_) => Type::Grid,
             Value::IntegerTuple(_) => Type::IntegerTuple,
             Value::Indices(_) => Type::Indices,
+            Value::Object(_) => Type::Object,
         }
     }
 }
@@ -267,9 +269,10 @@ mod tests {
 
     #[test]
     fn same_program_runs_on_different_grids() {
-        let primitive = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "hmirror")
+        let primitive = crate::registry::find_by_name_and_inputs(
+                "hmirror",
+                &[Type::Grid],
+            )
             .unwrap();
 
         let program = Connection::new(
@@ -508,15 +511,17 @@ mod tests {
         let input_1 = Connection::input("I", Type::Grid);
         let input_2 = Connection::input("I", Type::Grid);
 
-        let hmirror = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "hmirror")
-            .unwrap();
+        let hmirror = crate::registry::find_by_name_and_inputs(
+            "hmirror",
+            &[Type::Grid],
+        )
+        .unwrap();
 
-        let vmirror = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "vmirror")
-            .unwrap();
+        let vmirror = crate::registry::find_by_name_and_inputs(
+            "vmirror",
+            &[Type::Grid],
+        )
+        .unwrap();
 
         let program_1 = Connection::new(
             hmirror,
@@ -574,15 +579,17 @@ mod tests {
         let input_1 = Connection::input("I", Type::Grid);
         let input_2 = Connection::input("I", Type::Grid);
 
-        let hmirror = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "hmirror")
-            .unwrap();
+        let hmirror = crate::registry::find_by_name_and_inputs(
+            "hmirror",
+            &[Type::Grid],
+        )
+        .unwrap();
 
-        let vconcat = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "vconcat")
-            .unwrap();
+        let vconcat = crate::registry::find_by_name_and_inputs(
+            "vconcat",
+            &[Type::Grid, Type::Grid],
+        )
+        .unwrap();
 
         let mirrored = Connection::new(
             hmirror,
