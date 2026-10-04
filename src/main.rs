@@ -6,14 +6,18 @@ mod connection;
 mod environment;
 mod signature;
 
-use crate::connection::{Dataset};
-use crate::registry::{Type};
+use crate::connection::{Dataset, NamedTerminal};
+use crate::registry::{Type, Value};
 use crate::search::{generate, semantic_signature};
 use crate::signature::InputSpec;
 
 fn main() {
     let terminals = connection::Terminals {
-        integers: vec![1, 2, 3],
+        values: vec![
+            NamedTerminal::new("ONE", Value::Integer(1)),
+            NamedTerminal::new("TWO", Value::Integer(2)),
+            NamedTerminal::new("THREE", Value::Integer(3)),
+        ],
     };
 
     let dataset = Dataset::from_grids(vec![
