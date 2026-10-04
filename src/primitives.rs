@@ -1,7 +1,61 @@
 use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
 
 pub fn add(a: Integer, b: Integer) -> Integer {
-    a + b
+    let c = a + b;
+
+    if c == a || c == b {
+        panic!("add produced identity");
+    }
+
+    c
+}
+
+pub fn add_tuple_tuple(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a.0 + b.0,
+        a.1 + b.1,
+    );
+
+    if result == a || result == b {
+        panic!("add produced identity");
+    }
+
+    result
+}
+
+pub fn add_integer_tuple(
+    a: Integer,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a + b.0,
+        a + b.1,
+    );
+
+    if result == b {
+        panic!("add produced identity");
+    }
+
+    result
+}
+
+pub fn add_tuple_integer(
+    a: IntegerTuple,
+    b: Integer,
+) -> IntegerTuple {
+    let result = (
+        a.0 + b,
+        a.1 + b,
+    );
+
+    if result == a {
+        panic!("add produced identity");
+    }
+
+    result
 }
 
 pub fn hmirror(mut grid: Grid) -> Grid {
@@ -263,5 +317,58 @@ mod tests {
         ];
 
         hmirror(grid);
+    }
+
+    #[test]
+    fn test_add_integer_integer() {
+        assert_eq!(add(2, 3), 5);
+    }
+
+    #[test]
+    fn test_add_tuple_tuple() {
+        assert_eq!(
+            add_tuple_tuple((2, 3), (4, 5)),
+            (6, 8),
+        );
+    }
+
+    #[test]
+    fn test_add_integer_tuple() {
+        assert_eq!(
+            add_integer_tuple(2, (4, 5)),
+            (6, 7),
+        );
+    }
+
+    #[test]
+    fn test_add_tuple_integer() {
+        assert_eq!(
+            add_tuple_integer((4, 5), 2),
+            (6, 7),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "add produced identity")]
+    fn add_integer_integer_rejects_identity() {
+        add(0, 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "add produced identity")]
+    fn add_tuple_tuple_rejects_identity() {
+        add_tuple_tuple((0, 0), (2, 3));
+    }
+
+    #[test]
+    #[should_panic(expected = "add produced identity")]
+    fn add_integer_tuple_rejects_identity() {
+        add_integer_tuple(0, (2, 3));
+    }
+
+    #[test]
+    #[should_panic(expected = "add produced identity")]
+    fn add_tuple_integer_rejects_identity() {
+        add_tuple_integer((2, 3), 0);
     }
 }
