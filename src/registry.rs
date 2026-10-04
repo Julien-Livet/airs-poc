@@ -401,6 +401,27 @@ register_binary_primitive!(
     primitives::add
 );
 
+register_binary_primitive!(
+    ADD_TUPLE_TUPLE,
+    add_tuple_tuple_dyn_generated,
+    "add",
+    primitives::add_tuple_tuple
+);
+
+register_binary_primitive!(
+    ADD_INTEGER_TUPLE,
+    add_integer_tuple_dyn_generated,
+    "add",
+    primitives::add_integer_tuple
+);
+
+register_binary_primitive!(
+    ADD_TUPLE_INTEGER,
+    add_tuple_integer_dyn_generated,
+    "add",
+    primitives::add_tuple_integer
+);
+
 register_unary_primitive!(
     HMIRROR,
     hmirror_dyn_generated,
@@ -548,7 +569,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 10);
+        assert_eq!(PRIMITIVES.len(), 13);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -753,5 +774,57 @@ mod tests
                     && primitive.output == Type::Indices
             })
         );
+    }
+
+    #[test]
+    fn registry_resolves_all_add_overloads_by_input_signature() {
+        let integer_integer =
+            find_by_name_and_inputs(
+                "add",
+                &[Type::Integer, Type::Integer],
+            )
+            .unwrap();
+
+        assert_eq!(integer_integer.inputs, &[Type::Integer, Type::Integer]);
+        assert_eq!(integer_integer.output, Type::Integer);
+
+        let tuple_tuple =
+            find_by_name_and_inputs(
+                "add",
+                &[Type::IntegerTuple, Type::IntegerTuple],
+            )
+            .unwrap();
+
+        assert_eq!(
+            tuple_tuple.inputs,
+            &[Type::IntegerTuple, Type::IntegerTuple]
+        );
+        assert_eq!(tuple_tuple.output, Type::IntegerTuple);
+
+        let integer_tuple =
+            find_by_name_and_inputs(
+                "add",
+                &[Type::Integer, Type::IntegerTuple],
+            )
+            .unwrap();
+
+        assert_eq!(
+            integer_tuple.inputs,
+            &[Type::Integer, Type::IntegerTuple]
+        );
+        assert_eq!(integer_tuple.output, Type::IntegerTuple);
+
+        let tuple_integer =
+            find_by_name_and_inputs(
+                "add",
+                &[Type::IntegerTuple, Type::Integer],
+            )
+            .unwrap();
+
+        assert_eq!(
+            tuple_integer.inputs,
+            &[Type::IntegerTuple, Type::Integer]
+        );
+        assert_eq!(tuple_integer.output, Type::IntegerTuple);
     }
 }
