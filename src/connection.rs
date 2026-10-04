@@ -1,8 +1,65 @@
 use crate::registry::{PrimitiveEntry, Type, Value};
-use crate::types::{Grid, Integer};
+use crate::types::{Grid};
 
+#[derive(Debug, Clone)]
+pub struct NamedTerminal {
+    pub name: &'static str,
+    pub value: Value,
+}
+
+impl NamedTerminal {
+    pub fn new(
+        name: &'static str,
+        value: Value,
+    ) -> Self {
+        Self { name, value }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Terminals {
-    pub integers: Vec<Integer>,
+    pub values: Vec<NamedTerminal>,
+}
+
+impl Terminals {
+    pub fn arc_agi() -> Self {
+        Self {
+            values: vec![
+                NamedTerminal::new("F", Value::Boolean(false)),
+                NamedTerminal::new("T", Value::Boolean(true)),
+
+                NamedTerminal::new("ZERO", Value::Integer(0)),
+                NamedTerminal::new("ONE", Value::Integer(1)),
+                NamedTerminal::new("TWO", Value::Integer(2)),
+                NamedTerminal::new("THREE", Value::Integer(3)),
+                NamedTerminal::new("FOUR", Value::Integer(4)),
+                NamedTerminal::new("FIVE", Value::Integer(5)),
+                NamedTerminal::new("SIX", Value::Integer(6)),
+                NamedTerminal::new("SEVEN", Value::Integer(7)),
+                NamedTerminal::new("EIGHT", Value::Integer(8)),
+                NamedTerminal::new("NINE", Value::Integer(9)),
+                NamedTerminal::new("TEN", Value::Integer(10)),
+                NamedTerminal::new("NEG_ONE", Value::Integer(-1)),
+                NamedTerminal::new("NEG_TWO", Value::Integer(-2)),
+
+                NamedTerminal::new("DOWN", Value::IntegerTuple((-1, 0))),
+                NamedTerminal::new("RIGHT", Value::IntegerTuple((0, 1))),
+                NamedTerminal::new("UP", Value::IntegerTuple((1, 0))),
+                NamedTerminal::new("LEFT", Value::IntegerTuple((0, -1))),
+
+                NamedTerminal::new("ORIGIN", Value::IntegerTuple((0, 0))),
+                NamedTerminal::new("UNITY", Value::IntegerTuple((1, 1))),
+                NamedTerminal::new("NEG_UNITY", Value::IntegerTuple((-1, -1))),
+                NamedTerminal::new("UP_RIGHT", Value::IntegerTuple((-1, 1))),
+                NamedTerminal::new("DOWN_LEFT", Value::IntegerTuple((1, -1))),
+
+                NamedTerminal::new("ZERO_BY_TWO", Value::IntegerTuple((0, 2))),
+                NamedTerminal::new("TWO_BY_ZERO", Value::IntegerTuple((2, 0))),
+                NamedTerminal::new("TWO_BY_TWO", Value::IntegerTuple((2, 2))),
+                NamedTerminal::new("THREE_BY_THREE", Value::IntegerTuple((3, 3))),
+            ],
+        }
+    }
 }
 
 use crate::environment::InputEnvironment;
@@ -37,7 +94,10 @@ pub enum Connection {
         primitive: &'static PrimitiveEntry,
         inputs: Vec<Box<Connection>>,
     },
-    Constant(Value),
+    Constant {
+        name: String,
+        value: Value,
+    },
     Input {
         name: String,
         ty: Type,
@@ -101,7 +161,7 @@ impl Connection {
                 Ok(value.clone())
             }
 
-            Connection::Constant(value) => {
+            Connection::Constant { name: _, value: value } => {
                 Ok(value.clone())
             }
 
@@ -126,7 +186,7 @@ impl Connection {
         match self {
             Connection::Input { name: _, ty: _ } => true,
 
-            Connection::Constant(_) => false,
+            Connection::Constant { name: _, value: _} => false,
 
             Connection::Primitive { inputs, .. } => {
                 inputs.iter().any(|input| input.is_open())
@@ -135,7 +195,28 @@ impl Connection {
     }
 
     pub fn terminal(value: Value) -> Self {
-        Self::Constant(value)
+        let name = match &value {
+            Value::Boolean(value) => value.to_string(),
+            Value::Integer(value) => value.to_string(),
+            Value::IntegerTuple((a, b)) => {
+                format!("({}, {})", a, b)
+            }
+            Value::Grid(_) => "Grid".to_string(),
+            Value::Indices(_) => "Indices".to_string(),
+            Value::Object(_) => "Object".to_string(),
+        };
+
+        Self::Constant { name, value }
+    }
+
+    pub fn named_terminal(
+        name: impl Into<String>,
+        value: Value,
+    ) -> Self {
+        Self::Constant {
+            name: name.into(),
+            value,
+        }
     }
     
     pub fn input(
@@ -151,7 +232,7 @@ impl Connection {
     pub fn output_type(&self) -> Type {
         match self {
             Connection::Primitive { primitive, .. } => primitive.output,
-            Connection::Constant(value) => value.output_type(),
+            Connection::Constant { name: _, value: value } => value.output_type(),
             Connection::Input { ty, .. } => {
                 *ty
             }
@@ -168,7 +249,7 @@ impl Connection {
                 unreachable!("open inputs are rejected above")
             }
 
-            Connection::Constant(value) => {
+            Connection::Constant { name: _, value: value } => {
                 Ok(value.clone())
             }
 
@@ -193,14 +274,8 @@ impl Connection {
                 name.clone()
             }
 
-            Connection::Constant(value) => {
-                match value {
-                    Value::Integer(value) => value.to_string(),
-                    Value::Grid(_) => "Grid(...)".to_string(),
-                    Value::IntegerTuple(value) => format!("{value:?}"),
-                    Value::Indices(value) => format!("{value:?}"),
-                    Value::Object(value) => format!("{value:?}"),
-                }
+            Connection::Constant { name, .. } => {
+                name.clone()
             }
 
             Connection::Primitive { primitive, inputs } => {
@@ -219,9 +294,23 @@ impl Connection {
 impl Value {
     pub fn output_type(&self) -> Type {
         match self {
+            Value::Boolean(_) => Type::Boolean,
             Value::Integer(_) => Type::Integer,
             Value::Grid(_) => Type::Grid,
             Value::IntegerTuple(_) => Type::IntegerTuple,
+            Value::Indices(_) => Type::Indices,
+            Value::Object(_) => Type::Object,
+        }
+    }
+}
+
+impl Value {
+    pub fn ty(&self) -> Type {
+        match self {
+            Value::Boolean(_) => Type::Boolean,
+            Value::Integer(_) => Type::Integer,
+            Value::IntegerTuple(_) => Type::IntegerTuple,
+            Value::Grid(_) => Type::Grid,
             Value::Indices(_) => Type::Indices,
             Value::Object(_) => Type::Object,
         }
@@ -239,7 +328,11 @@ mod tests {
     #[test]
     fn integer_generation_has_expected_cardinality() {
         let terminals = Terminals {
-            integers: vec![1, 2, 3],
+            values: vec![
+                NamedTerminal::new("ONE", Value::Integer(1)),
+                NamedTerminal::new("TWO", Value::Integer(2)),
+                NamedTerminal::new("THREE", Value::Integer(3)),
+            ],
         };
 
         let inputs = vec![
@@ -367,7 +460,7 @@ mod tests {
         );
 
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -413,7 +506,7 @@ mod tests {
     #[test]
     fn generated_grid_programs_use_named_input() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
@@ -456,7 +549,7 @@ mod tests {
     #[test]
     fn connection_tracks_whether_it_is_open() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let closed = Connection::terminal(
@@ -731,7 +824,7 @@ mod tests {
     #[test]
     fn grid_generation_supports_multiple_named_inputs() {
         let terminals = Terminals {
-            integers: vec![],
+            values: vec![],
         };
 
         let inputs = vec![
