@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 
 use crate::primitives;
-use crate::types::{Grid, Indices, Integer, IntegerTuple};
+use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
 
 pub trait HasType {
     const TYPE: Type;
@@ -21,6 +21,10 @@ impl HasType for IntegerTuple {
 
 impl HasType for Indices {
     const TYPE: Type = Type::Indices;
+}
+
+impl HasType for Object {
+    const TYPE: Type = Type::Object;
 }
 
 macro_rules! register_primitive {
@@ -176,6 +180,21 @@ impl IntoValue for Indices {
     }
 }
 
+impl FromValue for Object {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Object(value) => Ok(value.clone()),
+            _ => Err("expected Object".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Object {
+    fn into_value(self) -> Value {
+        Value::Object(self)
+    }
+}
+
 pub const fn unary_descriptor<A, R>(
     name: &'static str,
     _function: fn(A) -> R,
@@ -296,6 +315,7 @@ pub enum Type {
     Grid,
     IntegerTuple,
     Indices,
+    Object,
 }
 
 
@@ -305,6 +325,7 @@ pub enum Value {
     Grid(Grid),
     IntegerTuple(IntegerTuple),
     Indices(Indices),
+    Object(Object),
 }
 
 
@@ -361,6 +382,18 @@ pub fn find_compatible(inputs: &[Type]) -> Vec<&'static PrimitiveEntry> {
         .collect()
 }
 
+pub fn find_by_name_and_inputs(
+    name: &str,
+    inputs: &[Type],
+) -> Option<&'static PrimitiveEntry> {
+    PRIMITIVES
+        .iter()
+        .find(|primitive| {
+            primitive.name == name
+                && primitive.accepts(inputs)
+        })
+}
+
 register_binary_primitive!(
     ADD,
     add_dyn_generated,
@@ -373,6 +406,13 @@ register_unary_primitive!(
     hmirror_dyn_generated,
     "hmirror",
     primitives::hmirror
+);
+
+register_unary_primitive!(
+    HMIRROR_INDICES,
+    hmirror_indices_dyn_generated,
+    "hmirror",
+    primitives::hmirror_indices
 );
 
 register_unary_primitive!(
@@ -438,6 +478,7 @@ mod tests
         Value,
         PRIMITIVES,
         find_compatible,
+        find_by_name_and_inputs,
     };
     use crate::{primitives, registry::hmirror_dyn_generated};
 
@@ -507,7 +548,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 9);
+        assert_eq!(PRIMITIVES.len(), 10);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -581,10 +622,11 @@ mod tests
 
     #[test]
     fn registered_primitive_can_be_applied_dynamically() {
-        let primitive = PRIMITIVES
-            .iter()
-            .find(|primitive| primitive.name == "hmirror")
-            .unwrap();
+        let primitive = find_by_name_and_inputs(
+            "hmirror",
+            &[Type::Grid],
+        )
+        .unwrap();
 
         let result = (primitive.apply)(&[
             Value::Grid(vec![
@@ -692,5 +734,24 @@ mod tests
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].name, "crop");
         assert_eq!(matches[0].output, Type::Grid);
+    }
+
+    #[test]
+    fn registry_contains_grid_and_indices_hmirror() {
+        let grid = find_compatible(&[Type::Grid]);
+        assert!(
+            grid.iter().any(|primitive| {
+                primitive.name == "hmirror"
+                    && primitive.output == Type::Grid
+            })
+        );
+
+        let indices = find_compatible(&[Type::Indices]);
+        assert!(
+            indices.iter().any(|primitive| {
+                primitive.name == "hmirror"
+                    && primitive.output == Type::Indices
+            })
+        );
     }
 }
