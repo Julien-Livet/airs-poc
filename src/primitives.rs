@@ -1,4 +1,4 @@
-use crate::types::{Grid, Indices, Integer, IntegerTuple};
+use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
 
 pub fn add(a: Integer, b: Integer) -> Integer {
     a + b
@@ -99,6 +99,40 @@ pub fn crop(
         .collect()
 }
 
+pub fn hmirror_object(object: Object) -> Object {
+    let (y_min, y_max) = object
+        .iter()
+        .map(|(_, (y, _))| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let d = y_min + y_max;
+
+    object
+        .into_iter()
+        .map(|(value, (y, x))| {
+            (value, (d - y, x))
+        })
+        .collect()
+}
+
+pub fn hmirror_indices(indices: Indices) -> Indices {
+    let (y_min, y_max) = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let d = y_min + y_max;
+
+    indices
+        .into_iter()
+        .map(|(y, x)| (d - y, x))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +173,46 @@ mod tests {
                 vec![7, 8, 9],
                 vec![2, 3, 4],
             ]
+        );
+    }
+
+    #[test]
+    fn hmirror_object_mirrors_rows() {
+        let object: Object = BTreeSet::from([
+            (1, (2, 5)),
+            (2, (4, 1)),
+            (3, (7, 9)),
+        ]);
+
+        let result = hmirror_object(object);
+
+        assert_eq!(
+            result,
+            BTreeSet::from([
+                (1, (7, 5)),
+                (2, (5, 1)),
+                (3, (2, 9)),
+            ])
+        );
+    }
+
+    #[test]
+    fn hmirror_indices_mirrors_rows() {
+        let indices: Indices = BTreeSet::from([
+            (2, 5),
+            (4, 1),
+            (7, 9),
+        ]);
+
+        let result = hmirror_indices(indices);
+
+        assert_eq!(
+            result,
+            BTreeSet::from([
+                (7, 5),
+                (5, 1),
+                (2, 9),
+            ])
         );
     }
 }
