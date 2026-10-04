@@ -72,7 +72,8 @@ pub fn generate(
 
             Type::Grid
             | Type::IntegerTuple
-            | Type::Indices => {
+            | Type::Indices
+            | Type::Object => {
                 programs.extend(
                     generate_inputs(
                         output_type,
