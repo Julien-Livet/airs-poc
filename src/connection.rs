@@ -937,4 +937,101 @@ mod tests {
                 ]
         ));
     }
+
+    #[test]
+    fn add_overloads_can_be_connected_and_evaluated() {
+        let integer_integer = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .unwrap();
+
+        let program = Connection::new(
+            integer_integer,
+            vec![
+                Box::new(Connection::terminal(Value::Integer(2))),
+                Box::new(Connection::terminal(Value::Integer(3))),
+            ],
+        )
+        .unwrap();
+
+        match program.output().unwrap() {
+            Value::Integer(value) => assert_eq!(value, 5),
+            other => panic!("expected Integer, got {:?}", other),
+        }
+
+        let tuple_tuple = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::IntegerTuple, Type::IntegerTuple],
+        )
+        .unwrap();
+
+        let program = Connection::new(
+            tuple_tuple,
+            vec![
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((2, 3)),
+                )),
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((4, 5)),
+                )),
+            ],
+        )
+        .unwrap();
+
+        match program.output().unwrap() {
+            Value::IntegerTuple(value) => {
+                assert_eq!(value, (6, 8));
+            }
+            other => panic!("expected IntegerTuple, got {:?}", other),
+        }
+
+        let integer_tuple = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::IntegerTuple],
+        )
+        .unwrap();
+
+        let program = Connection::new(
+            integer_tuple,
+            vec![
+                Box::new(Connection::terminal(Value::Integer(2))),
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((4, 5)),
+                )),
+            ],
+        )
+        .unwrap();
+
+        match program.output().unwrap() {
+            Value::IntegerTuple(value) => {
+                assert_eq!(value, (6, 7));
+            }
+            other => panic!("expected IntegerTuple, got {:?}", other),
+        }
+
+        let tuple_integer = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::IntegerTuple, Type::Integer],
+        )
+        .unwrap();
+
+        let program = Connection::new(
+            tuple_integer,
+            vec![
+                Box::new(Connection::terminal(
+                    Value::IntegerTuple((4, 5)),
+                )),
+                Box::new(Connection::terminal(Value::Integer(2))),
+            ],
+        )
+        .unwrap();
+
+        match program.output().unwrap() {
+            Value::IntegerTuple(value) => {
+                assert_eq!(value, (6, 7));
+            }
+            other => panic!("expected IntegerTuple, got {:?}", other),
+        }
+    }
 }
