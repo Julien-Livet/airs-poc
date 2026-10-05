@@ -62,6 +62,196 @@ pub fn add_tuple_integer(
     result
 }
 
+pub fn subtract(a: Integer, b: Integer) -> Integer {
+    let c = a - b;
+
+    if c == a || c == b {
+        panic!("subtract produced identity");
+    }
+
+    c
+}
+
+pub fn subtract_tuple_tuple(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a.0 - b.0,
+        a.1 - b.1,
+    );
+
+    if result == a || result == b {
+        panic!("subtract produced identity");
+    }
+
+    result
+}
+
+pub fn subtract_integer_tuple(
+    a: Integer,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a - b.0,
+        a - b.1,
+    );
+
+    if result == b {
+        panic!("subtract produced identity");
+    }
+
+    result
+}
+
+pub fn subtract_tuple_integer(
+    a: IntegerTuple,
+    b: Integer,
+) -> IntegerTuple {
+    let result = (
+        a.0 - b,
+        a.1 - b,
+    );
+
+    if result == a {
+        panic!("subtract produced identity");
+    }
+
+    result
+}
+
+pub fn multiply(a: Integer, b: Integer) -> Integer {
+    let c = a * b;
+
+    if c == a || c == b {
+        panic!("multiply produced identity");
+    }
+
+    c
+}
+
+pub fn multiply_tuple_tuple(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a.0 * b.0,
+        a.1 * b.1,
+    );
+
+    if result == a || result == b {
+        panic!("multiply produced identity");
+    }
+
+    result
+}
+
+pub fn multiply_integer_tuple(
+    a: Integer,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    let result = (
+        a * b.0,
+        a * b.1,
+    );
+
+    if result == b {
+        panic!("multiply produced identity");
+    }
+
+    result
+}
+
+pub fn multiply_tuple_integer(
+    a: IntegerTuple,
+    b: Integer,
+) -> IntegerTuple {
+    let result = (
+        a.0 * b,
+        a.1 * b,
+    );
+
+    if result == a {
+        panic!("multiply produced identity");
+    }
+
+    result
+}
+
+pub fn divide(a: Integer, b: Integer) -> Integer {
+    if b == 0 {
+        panic!("division by zero");
+    }
+
+    let c = a / b;
+
+    if c == a || c == b {
+        panic!("divide produced identity");
+    }
+
+    c
+}
+
+pub fn divide_tuple_tuple(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    if b.0 == 0 || b.1 == 0 {
+        panic!("division by zero");
+    }
+
+    let result = (
+        a.0 / b.0,
+        a.1 / b.1,
+    );
+
+    if result == a || result == b {
+        panic!("divide produced identity");
+    }
+
+    result
+}
+
+pub fn divide_integer_tuple(
+    a: Integer,
+    b: IntegerTuple,
+) -> IntegerTuple {
+    if b.0 == 0 || b.1 == 0 {
+        panic!("division by zero");
+    }
+
+    let result = (
+        a / b.0,
+        a / b.1,
+    );
+
+    if result == b {
+        panic!("divide produced identity");
+    }
+
+    result
+}
+
+pub fn divide_tuple_integer(
+    a: IntegerTuple,
+    b: Integer,
+) -> IntegerTuple {
+    if b == 0 {
+        panic!("division by zero");
+    }
+
+    let result = (
+        a.0 / b,
+        a.1 / b,
+    );
+
+    if result == a {
+        panic!("divide produced identity");
+    }
+
+    result
+}
+
 pub fn hmirror(mut grid: Grid) -> Grid {
     let original = grid.clone();
 
@@ -76,9 +266,103 @@ pub fn hmirror(mut grid: Grid) -> Grid {
     grid
 }
 
+pub fn hmirror_object(object: Object) -> Object {
+    let (y_min, y_max) = object
+        .iter()
+        .map(|(_, (y, _))| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let d = y_min + y_max;
+
+    let result: Object = object
+        .iter()
+        .map(|(value, (y, x))| (*value, (d - y, *x)))
+        .collect();
+
+    if result == object {
+        panic!("hmirror produced identity");
+    }
+
+    result
+}
+
+pub fn hmirror_indices(indices: Indices) -> Indices {
+    let (y_min, y_max) = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let d = y_min + y_max;
+
+    let result: Indices = indices
+        .iter()
+        .map(|(y, x)| (d - y, *x))
+        .collect();
+
+    if result == indices {
+        panic!("hmirror produced identity");
+    }
+
+    result
+}
+
 pub fn vmirror(mut grid: Grid) -> Grid {
+    let original = grid.clone();
+
     grid.reverse();
+
+    if grid == original {
+        panic!("vmirror produced identity");
+    }
+
     grid
+}
+pub fn vmirror_object(object: Object) -> Object {
+    let (x_min, x_max) = object
+        .iter()
+        .map(|(_, (_, x))| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let d = x_min + x_max;
+
+    let result: Object = object
+        .iter()
+        .map(|(value, (y, x))| (*value, (*y, d - x)))
+        .collect();
+
+    if result == object {
+        panic!("vmirror produced identity");
+    }
+
+    result
+}
+
+pub fn vmirror_indices(indices: Indices) -> Indices {
+    let (x_min, x_max) = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let d = x_min + x_max;
+
+    let result: Indices = indices
+        .iter()
+        .map(|(y, x)| (*y, d - x))
+        .collect();
+
+    if result == indices {
+        panic!("vmirror produced identity");
+    }
+
+    result
 }
 
 pub fn vconcat(mut top: Grid, bottom: Grid) -> Grid {
@@ -161,50 +445,6 @@ pub fn crop(
             Some(cropped)
         })
         .collect()
-}
-
-pub fn hmirror_object(object: Object) -> Object {
-    let (y_min, y_max) = object
-        .iter()
-        .map(|(_, (y, _))| *y)
-        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
-            (min_y.min(y), max_y.max(y))
-        });
-
-    let d = y_min + y_max;
-
-    let result: Object = object
-        .iter()
-        .map(|(value, (y, x))| (*value, (d - y, *x)))
-        .collect();
-
-    if result == object {
-        panic!("hmirror produced identity");
-    }
-
-    result
-}
-
-pub fn hmirror_indices(indices: Indices) -> Indices {
-    let (y_min, y_max) = indices
-        .iter()
-        .map(|(y, _)| *y)
-        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
-            (min_y.min(y), max_y.max(y))
-        });
-
-    let d = y_min + y_max;
-
-    let result: Indices = indices
-        .iter()
-        .map(|(y, x)| (d - y, *x))
-        .collect();
-
-    if result == indices {
-        panic!("hmirror produced identity");
-    }
-
-    result
 }
 
 #[cfg(test)]
