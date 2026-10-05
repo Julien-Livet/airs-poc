@@ -735,4 +735,33 @@ mod tests
             _ => panic!("expected Boolean result"),
         }
     }
+
+    #[test]
+    fn typed_inputs_can_form_a_function_body() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new("TWO", Value::Integer(2)),
+            ],
+        };
+
+        let inputs = vec![
+            InputSpec {
+                name: "X".to_string(),
+                ty: Type::Integer,
+            },
+        ];
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &inputs,
+        );
+
+        assert!(
+            programs.iter().any(|program| {
+                program.expression() == "add(TWO, X)"
+            })
+        );
+    }
 }
