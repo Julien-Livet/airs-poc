@@ -5,6 +5,7 @@ mod search;
 mod connection;
 mod environment;
 mod signature;
+mod function;
 
 use crate::connection::{Dataset, NamedTerminal};
 use crate::registry::{Type, Value};
