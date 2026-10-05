@@ -1,7 +1,211 @@
 use linkme::distributed_slice;
+use std::collections::HashMap;
 
 use crate::primitives;
+use crate::connection::Connection;
 use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
+use crate::function::Function;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DynamicPrimitive {
+    Lbind,
+    Apply,
+}
+
+pub fn lbind_value(
+    function: &Value,
+    fixed: &Value,
+) -> Result<Value, String> {
+    let function = match function {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "lbind expects a Function".to_string()
+            );
+        }
+    };
+
+    let fixed = Connection::terminal(
+        fixed.clone(),
+    );
+
+    Ok(Value::Function(Box::new(
+        function.lbind(fixed)?,
+    )))
+}
+
+pub fn apply_value(
+    function: &Value,
+    argument: &Value,
+) -> Result<Value, String> {
+    apply_values(
+        function,
+        vec![argument.clone()],
+    )
+}
+
+pub fn apply_values(
+    function: &Value,
+    arguments: Vec<Value>,
+) -> Result<Value, String> {
+    let function = match function {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "apply expects a Function".to_string()
+            );
+        }
+    };
+
+    function.apply_values(arguments)
+}
+
+#[derive(Debug, Default)]
+pub struct FunctionTypeRegistry {
+    types: Vec<FunctionType>,
+    ids: HashMap<FunctionType, FunctionTypeId>,
+}
+
+impl FunctionTypeRegistry {
+    pub fn type_of(
+        &mut self,
+        inputs: &[Type],
+        output: Type,
+    ) -> Type {
+        Type::Function(self.intern(inputs, output))
+    }
+
+    pub fn lbind_type(
+        &mut self,
+        function_type: Type,
+        fixed_type: Type,
+    ) -> Result<Type, String> {
+        let id = match function_type {
+            Type::Function(id) => id,
+            other => {
+                return Err(format!(
+                    "lbind expects a function, got {:?}",
+                    other
+                ));
+            }
+        };
+
+        let (remaining, output) = {
+            let function = self
+                .get(id)
+                .ok_or_else(|| "unknown function type".to_string())?;
+
+            if function.inputs.is_empty() {
+                return Err(
+                    "cannot lbind a function with no inputs".to_string()
+                );
+            }
+
+            if function.inputs[0] != fixed_type {
+                return Err(format!(
+                    "lbind type mismatch: expected {:?}, got {:?}",
+                    function.inputs[0],
+                    fixed_type
+                ));
+            }
+
+            let remaining = &function.inputs[1..];
+
+            (remaining.to_vec(), function.output)
+        };
+
+        Ok(self.type_of(&remaining, output))
+    }
+
+    pub fn apply_type(
+        &self,
+        function_type: Type,
+        argument_types: &[Type],
+    ) -> Result<Type, String> {
+        let id = match function_type {
+            Type::Function(id) => id,
+            other => {
+                return Err(format!(
+                    "apply expects a function, got {:?}",
+                    other
+                ));
+            }
+        };
+
+        let function = self
+            .get(id)
+            .ok_or_else(|| "unknown function type".to_string())?;
+
+        if function.inputs.len() != argument_types.len() {
+            return Err(format!(
+                "apply argument count mismatch: expected {}, got {}",
+                function.inputs.len(),
+                argument_types.len()
+            ));
+        }
+
+        for (expected, actual) in
+            function.inputs.iter().zip(argument_types.iter())
+        {
+            if expected != actual {
+                return Err(format!(
+                    "apply type mismatch: expected {:?}, got {:?}",
+                    expected,
+                    actual
+                ));
+            }
+        }
+
+        Ok(function.output)
+    }
+}
+
+impl FunctionTypeRegistry {
+    pub fn function_type(
+        &self,
+        ty: Type,
+    ) -> Option<&FunctionType> {
+        match ty {
+            Type::Function(id) => self.get(id),
+            _ => None,
+        }
+    }
+}
+
+impl FunctionTypeRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn intern(
+        &mut self,
+        inputs: &[Type],
+        output: Type,
+    ) -> FunctionTypeId {
+        let function_type = FunctionType {
+            inputs: inputs.to_vec(),
+            output,
+        };
+
+        if let Some(&id) = self.ids.get(&function_type) {
+            return id;
+        }
+
+        let id = FunctionTypeId(self.types.len() as u32);
+
+        self.types.push(function_type.clone());
+        self.ids.insert(function_type, id);
+
+        id
+    }
+
+    pub fn get(
+        &self,
+        id: FunctionTypeId,
+    ) -> Option<&FunctionType> {
+        self.types.get(id.0 as usize)
+    }
+}
 
 pub trait HasType {
     const TYPE: Type;
@@ -214,6 +418,21 @@ impl IntoValue for Boolean {
     }
 }
 
+impl FromValue for Function {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Function(function) => Ok((**function).clone()),
+            _ => Err("expected Function".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Function {
+    fn into_value(self) -> Value {
+        Value::Function(Box::new(self))
+    }
+}
+
 pub const fn unary_descriptor<A, R>(
     name: &'static str,
     _function: fn(A) -> R,
@@ -328,6 +547,14 @@ where
     Ok(function(a, b, c).into_value())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FunctionType {
+    pub inputs: Vec<Type>,
+    pub output: Type,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FunctionTypeId(u32);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
     Boolean,
@@ -336,6 +563,7 @@ pub enum Type {
     IntegerTuple,
     Indices,
     Object,
+    Function(FunctionTypeId),
 }
 
 
@@ -347,9 +575,10 @@ pub enum Value {
     IntegerTuple(IntegerTuple),
     Indices(Indices),
     Object(Object),
+    Function(Box<Function>),
 }
 
-
+#[derive(Debug)]
 pub struct PrimitiveEntry {
     pub name: &'static str,
     pub inputs: &'static [Type],
@@ -663,20 +892,11 @@ register_ternary_primitive!(
 #[cfg(test)]
 mod tests
 {
-    use super::{
-        PrimitiveEntry,
-        Type,
-        unary_descriptor,
-        binary_descriptor,
-        ternary_descriptor,
-        call_unary,
-        call_ternary,
-        Value,
-        PRIMITIVES,
-        find_compatible,
-        find_by_name_and_inputs,
-    };
+    use super::*;
     use crate::{primitives, registry::hmirror_dyn_generated};
+    use crate::connection::Connection;
+    use crate::signature::InputSpec;
+    use crate::function::Function;
 
     #[test]
     fn unary_descriptor_infers_types() {
@@ -1010,5 +1230,1473 @@ mod tests
             Value::IntegerTuple((1, 2)).ty(),
             Type::IntegerTuple
         );
+    }
+
+    #[test]
+    fn function_types_are_interned() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let integer_to_integer =
+            registry.intern(&[Type::Integer], Type::Integer);
+
+        let same =
+            registry.intern(&[Type::Integer], Type::Integer);
+
+        let integer_to_tuple =
+            registry.intern(
+                &[Type::Integer],
+                Type::IntegerTuple,
+            );
+
+        assert_eq!(integer_to_integer, same);
+        assert_ne!(integer_to_integer, integer_to_tuple);
+
+        assert_eq!(
+            registry.get(integer_to_integer),
+            Some(&FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn function_type_can_be_built_from_a_function() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![Box::new(two), Box::new(x)],
+        )
+        .expect("add(TWO, X) must be valid");
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let mut registry = FunctionTypeRegistry::new();
+
+        let ty = registry.type_of(
+            &[function.input_type()],
+            function.body_type(),
+        );
+
+        assert_eq!(
+            registry.get(match ty {
+                Type::Function(id) => id,
+                other => panic!("expected function type, got {:?}", other),
+            }),
+            Some(&FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn function_value_has_function_type() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![Box::new(two), Box::new(x)],
+        )
+        .expect("add(TWO, X) must be valid");
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let value = Value::Function(Box::new(function));
+
+        let mut registry = FunctionTypeRegistry::new();
+
+        let ty = value.output_type_with(&mut registry);
+
+        let function_type_id = match ty {
+            Type::Function(id) => id,
+            other => panic!("expected function type, got {:?}", other),
+        };
+
+        assert_eq!(
+            registry.get(function_type_id),
+            Some(&FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn function_type_can_be_resolved_from_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let ty = registry.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function_type = registry
+            .function_type(ty)
+            .expect("function type must resolve");
+
+        assert_eq!(
+            function_type,
+            &FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            }
+        );
+
+        assert_eq!(
+            registry.function_type(Type::Integer),
+            None
+        );
+    }
+
+    #[test]
+    fn lbind_type_removes_first_argument() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry
+            .lbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .expect("lbind type must succeed");
+
+        let result_type = registry
+            .function_type(result)
+            .expect("result must be a function type");
+
+        assert_eq!(
+            result_type,
+            &FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn lbind_type_rejects_wrong_fixed_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry.lbind_type(
+            function_type,
+            Type::Boolean,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn apply_type_returns_function_output() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry
+            .apply_type(
+                function_type,
+                &[Type::Integer, Type::Integer],
+            )
+            .expect("apply type must succeed");
+
+        assert_eq!(result, Type::Integer);
+    }
+
+    #[test]
+    fn apply_type_rejects_wrong_argument_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry.apply_type(
+            function_type,
+            &[Type::Integer, Type::Boolean],
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lbind_then_apply_type_checks() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let bound_type = registry
+            .lbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .expect("lbind type must succeed");
+
+        let result = registry
+            .apply_type(
+                bound_type,
+                &[Type::Integer],
+            )
+            .expect("apply type must succeed");
+
+        assert_eq!(result, Type::Integer);
+    }
+
+    #[test]
+    fn function_value_can_be_converted_back_to_function() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let connection = input.connection();
+
+        let function = Function::new(
+            vec![input],
+            connection,
+        );
+
+        let value = function.clone().into_value();
+
+        let recovered = Function::from_value(&value)
+            .expect("function value must convert back");
+
+        assert_eq!(
+            recovered.inputs.len(),
+            1,
+        );
+
+        assert_eq!(
+            recovered.inputs[0].ty,
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn function_value_can_be_applied_to_value() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input.connection()),
+                Box::new(two),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let function_value = Value::Function(
+            Box::new(function)
+        );
+
+        let function = match function_value {
+            Value::Function(function) => function,
+            _ => unreachable!(),
+        };
+
+        let result = function
+            .apply_values(vec![
+                Value::Integer(3),
+            ])
+            .expect("function application must succeed");
+
+        assert_eq!(
+            result.output_type(),
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn function_value_type_can_be_registered() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let body = input.connection();
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let value = Value::Function(
+            Box::new(function)
+        );
+
+        let ty = value.output_type_with(
+            &mut registry,
+        );
+
+        let function_type = registry
+            .function_type(ty)
+            .expect("value type must be a function type");
+
+        assert_eq!(
+            function_type.inputs,
+            vec![Type::Integer],
+        );
+
+        assert_eq!(
+            function_type.output,
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn lbind_type_depends_on_function_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let integer_function = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let boolean_function = registry.type_of(
+            &[Type::Boolean, Type::Integer],
+            Type::Integer,
+        );
+
+        let bound_integer = registry
+            .lbind_type(
+                integer_function,
+                Type::Integer,
+            )
+            .expect("integer lbind must succeed");
+
+        let bound_boolean = registry
+            .lbind_type(
+                boolean_function,
+                Type::Boolean,
+            )
+            .expect("boolean lbind must succeed");
+
+        assert_eq!(
+            bound_integer,
+            bound_boolean,
+        );
+
+        assert_eq!(
+            registry.function_type(bound_integer)
+                .expect("bound integer must be a function")
+                .inputs,
+            vec![Type::Integer],
+        );
+
+        assert_eq!(
+            registry.function_type(bound_boolean)
+                .expect("bound boolean must be a function")
+                .inputs,
+            vec![Type::Integer],
+        );
+    }
+
+    #[test]
+    fn lbind_value_returns_function() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .expect("lbind must succeed");
+
+        match result {
+            Value::Function(function) => {
+                assert_eq!(function.inputs.len(), 1);
+                assert_eq!(
+                    function.inputs[0].ty,
+                    Type::Integer,
+                );
+            }
+            _ => panic!("lbind must return a Function"),
+        }
+    }
+
+    #[test]
+    fn lbind_value_result_can_be_applied() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .expect("lbind must succeed");
+
+        let bound_function = match bound {
+            Value::Function(function) => function,
+            _ => panic!("lbind must return a Function"),
+        };
+
+        let result = bound_function
+            .apply_values(vec![
+                Value::Integer(3),
+            ])
+            .expect("application must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn lbind_value_rejects_non_function() {
+        let result = lbind_value(
+            &Value::Integer(1),
+            &Value::Integer(2),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lbind_value_rejects_wrong_fixed_type() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = lbind_value(
+            &function,
+            &Value::Grid(vec![vec![1]]),
+        );
+
+        let error = result.expect_err(
+            "lbind must reject the wrong fixed type",
+        );
+
+        assert!(
+            error.contains("lbind type mismatch"),
+            "unexpected error: {error}",
+        );
+    }
+
+    #[test]
+    fn lbind_value_works_for_three_arguments() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_z = InputSpec {
+            name: "Z".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let xy = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("first add must be valid");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(xy),
+                Box::new(input_z.connection()),
+            ],
+        )
+        .expect("second add must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y, input_z],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(1),
+        )
+        .expect("lbind must succeed");
+
+        let bound_function = match bound {
+            Value::Function(function) => function,
+            _ => panic!("lbind must return a Function"),
+        };
+
+        let result = bound_function
+            .apply_values(vec![
+                Value::Integer(2),
+                Value::Integer(3),
+            ])
+            .expect("application must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 6),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn apply_value_applies_function_to_value() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .expect("lbind must succeed");
+
+        let result = apply_value(
+            &bound,
+            &Value::Integer(3),
+        )
+        .expect("apply must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn apply_value_rejects_non_function() {
+        let result = apply_value(
+            &Value::Integer(1),
+            &Value::Integer(2),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn apply_value_rejects_wrong_argument_type() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .expect("lbind must succeed");
+
+        let result = apply_value(
+            &bound,
+            &Value::Grid(vec![vec![1]]),
+        );
+
+        let error = result.expect_err(
+            "apply must reject the wrong argument type",
+        );
+
+        assert!(
+            error.contains("apply type mismatch"),
+            "unexpected error: {error}",
+        );
+    }
+
+    #[test]
+    fn apply_value_requires_unary_function() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = apply_value(
+            &function,
+            &Value::Integer(2),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn apply_values_applies_multi_argument_function() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(2),
+                Value::Integer(3),
+            ],
+        )
+        .expect("apply must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn apply_values_rejects_wrong_argument_count() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(2),
+            ],
+        );
+
+        let error = result.expect_err(
+            "apply must reject the wrong argument count",
+        );
+
+        assert!(
+            error.contains("wrong number of arguments"),
+            "unexpected error: {error}",
+        );
+    }
+
+    #[test]
+    fn lbind_value_supports_unary_function() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x.clone()],
+                input_x.connection(),
+            )
+        ));
+
+        let result = lbind_value(
+            &function,
+            &Value::Integer(1),
+        )
+        .expect("lbind must succeed");
+
+        match result {
+            Value::Function(function) => {
+                assert!(function.inputs.is_empty());
+            }
+            _ => panic!("lbind must return a Function"),
+        }
+    }
+
+    #[test]
+    fn lbind_type_supports_zero_argument_function() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry.lbind_type(
+            function_type,
+            Type::Integer,
+        );
+
+        assert!(
+            result.is_ok(),
+            "lbind type should support a zero-argument function",
+        );
+    }
+
+    #[test]
+    fn apply_values_executes_zero_argument_function() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x.clone()],
+                input_x.connection(),
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(1),
+        )
+        .expect("lbind must succeed");
+
+        let result = apply_values(
+            &bound,
+            vec![],
+        )
+        .expect("zero-argument application must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 1),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn lbind_value_has_expected_function_type() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .expect("lbind must succeed");
+
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let bound_type = bound.output_type_with(
+            &mut function_types,
+        );
+
+        let expected = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        assert_eq!(bound_type, expected);
+    }
+
+    #[test]
+    fn apply_values_result_has_expected_type() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x.clone()],
+                input_x.connection(),
+            )
+        ));
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(42),
+            ],
+        )
+        .expect("application must succeed");
+
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let result_type = result.output_type_with(
+            &mut function_types,
+        );
+
+        assert_eq!(
+            result_type,
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn lbind_then_apply_values_composes_at_value_level() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_z = InputSpec {
+            name: "Z".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let xy = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("first add must be valid");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(xy),
+                Box::new(input_z.connection()),
+            ],
+        )
+        .expect("second add must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y, input_z],
+                body,
+            )
+        ));
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(10),
+        )
+        .expect("lbind must succeed");
+
+        let result = apply_values(
+            &bound,
+            vec![
+                Value::Integer(20),
+                Value::Integer(30),
+            ],
+        )
+        .expect("application must succeed");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 60),
+            _ => panic!("expected Integer"),
+        }
+    }
+
+    #[test]
+    fn apply_values_rejects_wrong_second_argument_type() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(2),
+                Value::Grid(vec![vec![1]]),
+            ],
+        );
+
+        let error = result.expect_err(
+            "apply must reject the wrong second argument type",
+        );
+
+        assert!(
+            error.contains("apply type mismatch"),
+            "unexpected error: {error}",
+        );
+    }
+
+    #[test]
+    fn apply_values_rejects_too_many_arguments() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+            ],
+        );
+
+        let error = result.expect_err(
+            "apply must reject too many arguments",
+        );
+
+        assert!(
+            error.contains("wrong number of arguments"),
+            "unexpected error: {error}",
+        );
+    }
+
+    #[test]
+    fn apply_value_types_match_runtime_application() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let function_type = function.output_type_with(
+            &mut function_types,
+        );
+
+        let result_type = function_types
+            .apply_type(
+                function_type,
+                &[Type::Integer, Type::Integer],
+            )
+            .expect("apply type must succeed");
+
+        assert_eq!(
+            result_type,
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn lbind_value_type_matches_runtime_binding() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y],
+                body,
+            )
+        ));
+
+        let fixed = Value::Integer(10);
+
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let function_type = function.output_type_with(
+            &mut function_types,
+        );
+
+        let bound_type = function_types
+            .lbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .expect("lbind type must succeed");
+
+        let bound = lbind_value(
+            &function,
+            &fixed,
+        )
+        .expect("lbind must succeed");
+
+        let runtime_bound_type =
+            bound.output_type_with(&mut function_types);
+
+        assert_eq!(
+            bound_type,
+            runtime_bound_type,
+        );
+    }
+
+    #[test]
+    fn lbind_value_can_be_applied_successively() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_z = InputSpec {
+            name: "Z".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let xy = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("inner add connection must be valid");
+
+        let xyz = Connection::new(
+            add,
+            vec![
+                Box::new(xy),
+                Box::new(input_z.connection()),
+            ],
+        )
+        .expect("outer add connection must be valid");
+
+        let function = Value::Function(Box::new(
+            Function::new(
+                vec![input_x, input_y, input_z],
+                xyz,
+            ),
+        ));
+
+        let bound_x = lbind_value(
+            &function,
+            &Value::Integer(10),
+        )
+        .expect("first lbind must succeed");
+
+        let bound_y = lbind_value(
+            &bound_x,
+            &Value::Integer(20),
+        )
+        .expect("second lbind must succeed");
+
+        let result = apply_value(
+            &bound_y,
+            &Value::Integer(30),
+        )
+        .expect("final apply must succeed");
+
+        match result {
+            Value::Integer(value) => {
+                assert_eq!(value, 60);
+            }
+            other => {
+                panic!("expected Integer, got {:?}", other);
+            }
+        }
     }
 }
