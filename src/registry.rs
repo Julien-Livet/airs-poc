@@ -576,6 +576,48 @@ register_unary_primitive!(
     primitives::vmirror_indices
 );
 
+register_unary_primitive!(
+    DMIRROR,
+    dmirror_dyn_generated,
+    "dmirror",
+    primitives::dmirror
+);
+
+register_unary_primitive!(
+    DMIRROR_OBJECT,
+    dmirror_object_dyn_generated,
+    "dmirror",
+    primitives::dmirror_object
+);
+
+register_unary_primitive!(
+    DMIRROR_INDICES,
+    dmirror_indices_dyn_generated,
+    "dmirror",
+    primitives::dmirror_indices
+);
+
+register_unary_primitive!(
+    CMIRROR,
+    cmirror_dyn_generated,
+    "cmirror",
+    primitives::cmirror
+);
+
+register_unary_primitive!(
+    CMIRROR_OBJECT,
+    cmirror_object_dyn_generated,
+    "cmirror",
+    primitives::cmirror_object
+);
+
+register_unary_primitive!(
+    CMIRROR_INDICES,
+    cmirror_indices_dyn_generated,
+    "cmirror",
+    primitives::cmirror_indices
+);
+
 register_binary_primitive!(
     VCONCAT,
     vconcat_dyn_generated,
@@ -702,7 +744,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 29);
+        assert_eq!(PRIMITIVES.len(), 35);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
