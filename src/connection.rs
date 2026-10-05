@@ -1,4 +1,4 @@
-use crate::registry::{PrimitiveEntry, Type, Value};
+use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry};
 use crate::types::{Grid};
 
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl Dataset {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Connection {
     Primitive {
         primitive: &'static PrimitiveEntry,
@@ -161,7 +161,7 @@ impl Connection {
                 Ok(value.clone())
             }
 
-            Connection::Constant { name: _, value: value } => {
+            Connection::Constant { name: _, value } => {
                 Ok(value.clone())
             }
 
@@ -204,6 +204,7 @@ impl Connection {
             Value::Grid(_) => "Grid".to_string(),
             Value::Indices(_) => "Indices".to_string(),
             Value::Object(_) => "Object".to_string(),
+            &Value::Function(_) => "Function".to_string(),
         };
 
         Self::Constant { name, value }
@@ -232,7 +233,7 @@ impl Connection {
     pub fn output_type(&self) -> Type {
         match self {
             Connection::Primitive { primitive, .. } => primitive.output,
-            Connection::Constant { name: _, value: value } => value.output_type(),
+            Connection::Constant { name: _, value } => value.output_type(),
             Connection::Input { ty, .. } => {
                 *ty
             }
@@ -249,7 +250,7 @@ impl Connection {
                 unreachable!("open inputs are rejected above")
             }
 
-            Connection::Constant { name: _, value: value } => {
+            Connection::Constant { name: _, value } => {
                 Ok(value.clone())
             }
 
@@ -291,6 +292,51 @@ impl Connection {
     }
 }
 
+impl Connection {
+    pub fn substitute_input(
+        &self,
+        name: &str,
+        replacement: &Connection,
+    ) -> Connection {
+        match self {
+            Connection::Input { name: input_name, .. } => {
+                if input_name == name {
+                    replacement.clone()
+                } else {
+                    self.clone()
+                }
+            }
+
+            Connection::Constant { .. } => {
+                self.clone()
+            }
+
+            Connection::Primitive {
+                primitive,
+                inputs,
+            } => {
+                let inputs = inputs
+                    .iter()
+                    .map(|input| {
+                        Box::new(
+                            input.substitute_input(
+                                name,
+                                replacement,
+                            )
+                        )
+                    })
+                    .collect();
+
+                Connection::new(
+                    primitive,
+                    inputs,
+                )
+                .expect("substitution must preserve primitive signature")
+            }
+        }
+    }
+}
+
 impl Value {
     pub fn output_type(&self) -> Type {
         match self {
@@ -300,6 +346,10 @@ impl Value {
             Value::IntegerTuple(_) => Type::IntegerTuple,
             Value::Indices(_) => Type::Indices,
             Value::Object(_) => Type::Object,
+            Value::Function(_) => {
+                // provisoirement impossible à déterminer sans registre
+                todo!()
+            }
         }
     }
 }
@@ -313,6 +363,34 @@ impl Value {
             Value::Grid(_) => Type::Grid,
             Value::Indices(_) => Type::Indices,
             Value::Object(_) => Type::Object,
+            Value::Function(_) => {
+                todo!()
+            }
+        }
+    }
+}
+
+impl Value {
+    pub fn output_type_with(
+        &self,
+        function_types: &mut FunctionTypeRegistry,
+    ) -> Type {
+        match self {
+            Value::Boolean(_) => Type::Boolean,
+            Value::Integer(_) => Type::Integer,
+            Value::IntegerTuple(_) => Type::IntegerTuple,
+            Value::Grid(_) => Type::Grid,
+            Value::Indices(_) => Type::Indices,
+            Value::Object(_) => Type::Object,
+            Value::Function(function) => {
+                function_types.type_of(
+                    &function.inputs
+                        .iter()
+                        .map(|input| input.ty)
+                        .collect::<Vec<_>>(),
+                    function.body_type(),
+                )
+            }
         }
     }
 }
@@ -324,6 +402,7 @@ mod tests {
     use crate::search::{generate, semantic_signature, generate_inputs};
     use crate::signature::InputSpec;
     use crate::registry::{PRIMITIVES, Value};
+    use crate::function::Function;
 
     #[test]
     fn integer_generation_has_expected_cardinality() {
@@ -1126,5 +1205,170 @@ mod tests {
             }
             other => panic!("expected IntegerTuple, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn expression_with_typed_input_can_be_evaluated() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let program = Connection::new(
+            add,
+            vec![Box::new(two), Box::new(x)],
+        )
+        .expect("add(TWO, X) must be valid");
+
+        let mut environment = InputEnvironment::new();
+        environment.insert(
+            "X".to_string(),
+            Value::Integer(3),
+        );
+
+        let result = program
+            .output_with_inputs(&environment)
+            .expect("program must evaluate");
+
+        assert_eq!(result.output_type(), Type::Integer);
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            other => panic!("expected Integer(5), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn symbolic_function_can_be_constructed() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![Box::new(two), Box::new(x)],
+        )
+        .expect("add(TWO, X) must be valid");
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        assert_eq!(function.inputs[0].ty, Type::Integer);
+        assert_eq!(function.body.output_type(), Type::Integer);
+    }
+
+    #[test]
+    fn symbolic_function_body_can_be_evaluated() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![Box::new(two), Box::new(x)],
+        )
+        .expect("add(TWO, X) must be valid");
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let mut environment = InputEnvironment::new();
+        environment.insert(
+            "X".to_string(),
+            Value::Integer(3),
+        );
+
+        let result = function
+            .body
+            .output_with_inputs(&environment)
+            .expect("function body must evaluate");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            other => panic!("expected Integer(5), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn connection_can_substitute_an_input() {
+        let input = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let x = input.connection();
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let expression = Connection::new(
+            add,
+            vec![
+                Box::new(x.clone()),
+                Box::new(x.clone()),
+            ],
+        )
+        .expect("add(X, X) must be valid");
+
+        let substituted =
+            expression.substitute_input("X", &two);
+
+        assert_eq!(
+            substituted.expression(),
+            "add(TWO, TWO)"
+        );
     }
 }
