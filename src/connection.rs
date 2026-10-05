@@ -486,7 +486,7 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(programs.len(), 16);
+        assert_eq!(programs.len(), 256);
 
         let mut signatures = std::collections::BTreeSet::new();
 
@@ -500,7 +500,7 @@ mod tests {
             signatures.insert(signature);
         }
 
-        assert_eq!(signatures.len(), 2);
+        assert_eq!(signatures.len(), 4);
     }
 
     #[test]
@@ -845,7 +845,7 @@ mod tests {
             &inputs,
         );
 
-        assert_eq!(programs.len(), 8);
+        assert_eq!(programs.len(), 12);
 
         let expressions = programs
             .iter()
