@@ -365,6 +365,183 @@ pub fn vmirror_indices(indices: Indices) -> Indices {
     result
 }
 
+pub fn dmirror(grid: Grid) -> Grid {
+    let original = grid.clone();
+
+    let height = grid.len();
+    let width = grid.first().map_or(0, |row| row.len());
+
+    let result: Grid = (0..width)
+        .map(|x| {
+            (0..height)
+                .map(|y| grid[y][x])
+                .collect()
+        })
+        .collect();
+
+    if result == original {
+        panic!("dmirror produced identity");
+    }
+
+    result
+}
+
+pub fn dmirror_object(object: Object) -> Object {
+    let (y_min, y_max) = object
+        .iter()
+        .map(|(_, (y, _))| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let (x_min, x_max) = object
+        .iter()
+        .map(|(_, (_, x))| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let result: Object = object
+        .iter()
+        .map(|(value, (y, x))| {
+            (
+                *value,
+                (
+                    y_min + (x - x_min),
+                    x_min + (y - y_min),
+                ),
+            )
+        })
+        .collect();
+
+    if result == object {
+        panic!("dmirror produced identity");
+    }
+
+    result
+}
+
+pub fn dmirror_indices(indices: Indices) -> Indices {
+    let (y_min, y_max) = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let (x_min, x_max) = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let result: Indices = indices
+        .iter()
+        .map(|(y, x)| {
+            (
+                y_min + (x - x_min),
+                x_min + (y - y_min),
+            )
+        })
+        .collect();
+
+    if result == indices {
+        panic!("dmirror produced identity");
+    }
+
+    result
+}
+
+pub fn cmirror(grid: Grid) -> Grid {
+    let original = grid.clone();
+
+    let height = grid.len();
+    let width = grid.first().map_or(0, |row| row.len());
+
+    let result: Grid = (0..width)
+        .map(|x| {
+            (0..height)
+                .rev()
+                .map(|y| grid[y][width - 1 - x])
+                .collect()
+        })
+        .collect();
+
+    if result == original {
+        panic!("cmirror produced identity");
+    }
+
+    result
+}
+
+pub fn cmirror_object(object: Object) -> Object {
+    let (y_min, y_max) = object
+        .iter()
+        .map(|(_, (y, _))| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let (x_min, x_max) = object
+        .iter()
+        .map(|(_, (_, x))| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let result: Object = object
+        .iter()
+        .map(|(value, (y, x))| {
+            (
+                *value,
+                (
+                    y_max - (x - x_min),
+                    x_max - (y - y_min),
+                ),
+            )
+        })
+        .collect();
+
+    if result == object {
+        panic!("cmirror produced identity");
+    }
+
+    result
+}
+
+pub fn cmirror_indices(indices: Indices) -> Indices {
+    let (y_min, y_max) = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
+            (min_y.min(y), max_y.max(y))
+        });
+
+    let (x_min, x_max) = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
+            (min_x.min(x), max_x.max(x))
+        });
+
+    let result: Indices = indices
+        .iter()
+        .map(|(y, x)| {
+            (
+                y_max - (x - x_min),
+                x_max - (y - y_min),
+            )
+        })
+        .collect();
+
+    if result == indices {
+        panic!("cmirror produced identity");
+    }
+
+    result
+}
+
 pub fn vconcat(mut top: Grid, bottom: Grid) -> Grid {
     top.extend(bottom);
     top
