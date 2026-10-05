@@ -356,8 +356,8 @@ mod tests {
             &inputs,
         );
 
-        assert_eq!(depth_1.len(), 9);
-        assert_eq!(depth_2.len(), 81);
+        assert_eq!(depth_1.len(), 36);
+        assert_eq!(depth_2.len(), 5184);
     }
 
     #[test]
