@@ -387,14 +387,14 @@ pub fn dmirror(grid: Grid) -> Grid {
 }
 
 pub fn dmirror_object(object: Object) -> Object {
-    let (y_min, y_max) = object
+    let (y_min, _y_max) = object
         .iter()
         .map(|(_, (y, _))| *y)
         .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
             (min_y.min(y), max_y.max(y))
         });
 
-    let (x_min, x_max) = object
+    let (x_min, _x_max) = object
         .iter()
         .map(|(_, (_, x))| *x)
         .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
@@ -422,14 +422,14 @@ pub fn dmirror_object(object: Object) -> Object {
 }
 
 pub fn dmirror_indices(indices: Indices) -> Indices {
-    let (y_min, y_max) = indices
+    let (y_min, _y_max) = indices
         .iter()
         .map(|(y, _)| *y)
         .fold((Integer::MAX, Integer::MIN), |(min_y, max_y), y| {
             (min_y.min(y), max_y.max(y))
         });
 
-    let (x_min, x_max) = indices
+    let (x_min, _x_max) = indices
         .iter()
         .map(|(_, x)| *x)
         .fold((Integer::MAX, Integer::MIN), |(min_x, max_x), x| {
