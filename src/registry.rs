@@ -415,7 +415,6 @@ pub fn find_by_name_and_inputs(
         })
 }
 
-
 register_binary_primitive!(
     ADD,
     add_dyn_generated,
@@ -444,6 +443,90 @@ register_binary_primitive!(
     primitives::add_tuple_integer
 );
 
+register_binary_primitive!(
+    SUBTRACT,
+    subtract_dyn_generated,
+    "subtract",
+    primitives::subtract
+);
+
+register_binary_primitive!(
+    SUBTRACT_TUPLE_TUPLE,
+    subtract_tuple_tuple_dyn_generated,
+    "subtract",
+    primitives::subtract_tuple_tuple
+);
+
+register_binary_primitive!(
+    SUBTRACT_INTEGER_TUPLE,
+    subtract_integer_tuple_dyn_generated,
+    "subtract",
+    primitives::subtract_integer_tuple
+);
+
+register_binary_primitive!(
+    SUBTRACT_TUPLE_INTEGER,
+    subtract_tuple_integer_dyn_generated,
+    "subtract",
+    primitives::subtract_tuple_integer
+);
+
+register_binary_primitive!(
+    MULTIPLY,
+    multiply_dyn_generated,
+    "multiply",
+    primitives::multiply
+);
+
+register_binary_primitive!(
+    MULTIPLY_TUPLE_TUPLE,
+    multiply_tuple_tuple_dyn_generated,
+    "multiply",
+    primitives::multiply_tuple_tuple
+);
+
+register_binary_primitive!(
+    MULTIPLY_INTEGER_TUPLE,
+    multiply_integer_tuple_dyn_generated,
+    "multiply",
+    primitives::multiply_integer_tuple
+);
+
+register_binary_primitive!(
+    MULTIPLY_TUPLE_INTEGER,
+    multiply_tuple_integer_dyn_generated,
+    "multiply",
+    primitives::multiply_tuple_integer
+);
+
+register_binary_primitive!(
+    DIVIDE,
+    divide_dyn_generated,
+    "divide",
+    primitives::divide
+);
+
+register_binary_primitive!(
+    DIVIDE_TUPLE_TUPLE,
+    divide_tuple_tuple_dyn_generated,
+    "divide",
+    primitives::divide_tuple_tuple
+);
+
+register_binary_primitive!(
+    DIVIDE_INTEGER_TUPLE,
+    divide_integer_tuple_dyn_generated,
+    "divide",
+    primitives::divide_integer_tuple
+);
+
+register_binary_primitive!(
+    DIVIDE_TUPLE_INTEGER,
+    divide_tuple_integer_dyn_generated,
+    "divide",
+    primitives::divide_tuple_integer
+);
+
 register_unary_primitive!(
     FLIP,
     flip_dyn_generated,
@@ -459,6 +542,13 @@ register_unary_primitive!(
 );
 
 register_unary_primitive!(
+    HMIRROR_OBJECT,
+    hmirror_object_dyn_generated,
+    "hmirror",
+    primitives::hmirror_object
+);
+
+register_unary_primitive!(
     HMIRROR_INDICES,
     hmirror_indices_dyn_generated,
     "hmirror",
@@ -470,6 +560,20 @@ register_unary_primitive!(
     vmirror_dyn_generated,
     "vmirror",
     primitives::vmirror
+);
+
+register_unary_primitive!(
+    VMIRROR_OBJECT,
+    vmirror_object_dyn_generated,
+    "vmirror",
+    primitives::vmirror_object
+);
+
+register_unary_primitive!(
+    VMIRROR_INDICES,
+    vmirror_indices_dyn_generated,
+    "vmirror",
+    primitives::vmirror_indices
 );
 
 register_binary_primitive!(
@@ -598,7 +702,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 14);
+        assert_eq!(PRIMITIVES.len(), 29);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
