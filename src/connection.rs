@@ -239,6 +239,32 @@ impl Connection {
         ))
     }
 
+    pub fn rbind(
+        function: Connection,
+        fixed: Connection,
+        function_types: &mut crate::registry::FunctionTypeRegistry,
+    ) -> Result<Self, String> {
+        let function_type =
+            function.output_type_with(function_types);
+
+        let fixed_type =
+            fixed.output_type_with(function_types);
+
+        let output = function_types.rbind_type(
+            function_type,
+            fixed_type,
+        )?;
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Rbind,
+            vec![
+                Box::new(function),
+                Box::new(fixed),
+            ],
+            output,
+        ))
+    }
+
     pub fn output_with_inputs(
         &self,
         environment: &InputEnvironment,
@@ -305,6 +331,20 @@ impl Connection {
                         }
 
                         crate::registry::lbind_value(
+                            &values[0],
+                            &values[1],
+                        )
+                    }
+
+                    DynamicPrimitive::Rbind => {
+                        if values.len() != 2 {
+                            return Err(format!(
+                                "rbind expects 2 arguments, got {}",
+                                values.len()
+                            ));
+                        }
+
+                        crate::registry::rbind_value(
                             &values[0],
                             &values[1],
                         )
@@ -1960,4 +2000,176 @@ mod tests {
             "apply(Function, 42)"
         );
     }
+    
+    #[test]
+    fn rbind_connection_has_bound_function_type() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::rbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        let expected = function_types
+            .rbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            bound.output_type(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn rbind_connection_has_symbolic_expression() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::rbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        assert_eq!(
+            bound.expression(),
+            "rbind(Function, 10)"
+        );
+    }
+
+    #[test]
+    fn rbind_connection_evaluates_to_function() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::rbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        let value = bound.output().unwrap();
+
+        match value {
+            Value::Function(function) => {
+                assert_eq!(function.inputs.len(), 1);
+                assert_eq!(
+                    function.inputs[0].ty,
+                    Type::Integer
+                );
+                assert_eq!(
+                    function.body.output_type(),
+                    Type::Integer
+                );
+
+                match function.body {
+                    Connection::Input { name, .. } => {
+                        assert_eq!(name, "X");
+                    }
+
+                    other => {
+                        panic!(
+                            "expected input body, got {:?}",
+                            other
+                        );
+                    }
+                }
+            }
+
+            other => {
+                panic!(
+                    "expected Function, got {:?}",
+                    other
+                );
+            }
+        }
+    }        
 }
