@@ -1,15 +1,176 @@
 use crate::connection::{Connection, Terminals};
-use crate::registry::{Type, Value, PrimitiveEntry};
+use crate::registry::{Type, Value, PrimitiveEntry, FunctionTypeRegistry, FunctionTypeId, DynamicPrimitive};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
 use crate::signature::InputSpec;
 use std::collections::BTreeMap;
 use rand::seq::SliceRandom;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DynamicCandidate {
+    Lbind(FunctionTypeId, Type),
+    Rbind(FunctionTypeId, Type),
+    Apply(FunctionTypeId),
+}
+
+fn dynamic_candidates(
+    output_type: Type,
+    function_types: &FunctionTypeRegistry,
+    rng: &mut impl rand::Rng,
+) -> Vec<DynamicCandidate> {
+    let mut candidates = Vec::new();
+
+    candidates.extend(
+        lbind_candidates(output_type, function_types)
+            .into_iter()
+            .map(|(function_id, fixed_type)| {
+                DynamicCandidate::Lbind(
+                    function_id,
+                    fixed_type,
+                )
+            }),
+    );
+
+    candidates.extend(
+        rbind_candidates(output_type, function_types)
+            .into_iter()
+            .map(|(function_id, fixed_type)| {
+                DynamicCandidate::Rbind(
+                    function_id,
+                    fixed_type,
+                )
+            }),
+    );
+
+    candidates.extend(
+        apply_candidates(output_type, function_types)
+            .into_iter()
+            .map(DynamicCandidate::Apply),
+    );
+
+    candidates.shuffle(rng);
+
+    candidates
+}
+
+fn apply_candidates(
+    output_type: Type,
+    function_types: &FunctionTypeRegistry,
+) -> Vec<FunctionTypeId> {
+    function_types
+        .all_types()
+        .filter_map(|(id, function_type)| {
+            if function_type.output == output_type {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn rbind_candidates(
+    output_type: Type,
+    function_types: &FunctionTypeRegistry,
+) -> Vec<(FunctionTypeId, Type)> {
+    let Type::Function(output_id) = output_type else {
+        return Vec::new();
+    };
+
+    let Some(output_inputs) =
+        function_types.inputs(output_id)
+    else {
+        return Vec::new();
+    };
+
+    let Some(output_output) =
+        function_types.output(output_id)
+    else {
+        return Vec::new();
+    };
+
+    function_types
+        .all_types()
+        .filter_map(|(source_id, source_type)| {
+            if source_type.inputs.len()
+                != output_inputs.len() + 1
+            {
+                return None;
+            }
+
+            let last =
+                source_type.inputs.len() - 1;
+
+            if source_type.inputs[..last]
+                != *output_inputs
+            {
+                return None;
+            }
+
+            if source_type.output != output_output {
+                return None;
+            }
+
+            Some((
+                source_id,
+                source_type.inputs[last],
+            ))
+        })
+        .collect()
+}
+
+fn lbind_candidates(
+    output_type: Type,
+    function_types: &FunctionTypeRegistry,
+) -> Vec<(FunctionTypeId, Type)> {
+    let Type::Function(output_id) = output_type else {
+        return Vec::new();
+    };
+
+    let Some(output_inputs) =
+        function_types.inputs(output_id)
+    else {
+        return Vec::new();
+    };
+
+    let Some(output_output) =
+        function_types.output(output_id)
+    else {
+        return Vec::new();
+    };
+
+    function_types
+        .all_types()
+        .filter_map(|(source_id, source_type)| {
+            if source_type.inputs.len()
+                != output_inputs.len() + 1
+            {
+                return None;
+            }
+
+            if source_type.inputs[1..]
+                != *output_inputs
+            {
+                return None;
+            }
+
+            if source_type.output != output_output {
+                return None;
+            }
+
+            Some((
+                source_id,
+                source_type.inputs[0],
+            ))
+        })
+        .collect()
+}
+
 fn build_connection(
     output_type: Type,
     depth: usize,
     inputs: &[InputSpec],
+    function_types: &mut FunctionTypeRegistry,
     rng: &mut impl rand::Rng,
 ) -> Result<Connection, String> {
     if depth == 0 {
@@ -20,6 +181,152 @@ fn build_connection(
                     output_type
                 )
             });
+    }
+
+    for candidate in
+        dynamic_candidates(output_type, function_types, rng)
+    {
+        match candidate {
+            DynamicCandidate::Lbind(
+                source_id,
+                fixed_type,
+            ) => {
+                let source_type =
+                    Type::Function(source_id);
+
+                let Ok(function) =
+                    build_connection(
+                        source_type,
+                        depth - 1,
+                        inputs,
+                        function_types,
+                        rng,
+                    )
+                else {
+                    continue;
+                };
+
+                let Ok(fixed) =
+                    build_connection(
+                        fixed_type,
+                        depth - 1,
+                        inputs,
+                        function_types,
+                        rng,
+                    )
+                else {
+                    continue;
+                };
+
+                if let Ok(connection) =
+                    Connection::lbind(
+                        function,
+                        fixed,
+                        function_types,
+                    )
+                {
+                    return Ok(connection);
+                }
+            }
+
+            DynamicCandidate::Rbind(
+                source_id,
+                fixed_type,
+            ) => {
+                let source_type =
+                    Type::Function(source_id);
+
+                let Ok(function) =
+                    build_connection(
+                        source_type,
+                        depth - 1,
+                        inputs,
+                        function_types,
+                        rng,
+                    )
+                else {
+                    continue;
+                };
+
+                let Ok(fixed) =
+                    build_connection(
+                        fixed_type,
+                        depth - 1,
+                        inputs,
+                        function_types,
+                        rng,
+                    )
+                else {
+                    continue;
+                };
+
+                if let Ok(connection) =
+                    Connection::rbind(
+                        function,
+                        fixed,
+                        function_types,
+                    )
+                {
+                    return Ok(connection);
+                }
+            }
+
+            DynamicCandidate::Apply(function_id) => {
+                let function_type =
+                    Type::Function(function_id);
+
+                let Ok(function) =
+                    build_connection(
+                        function_type,
+                        depth - 1,
+                        inputs,
+                        function_types,
+                        rng,
+                    )
+                else {
+                    continue;
+                };
+
+                let Some(argument_types) =
+                    function_types.inputs(function_id)
+                else {
+                    continue;
+                };
+
+                let argument_types =
+                    argument_types.to_vec();
+
+                let arguments =
+                    argument_types
+                        .iter()
+                        .map(|argument_type| {
+                            build_connection(
+                                *argument_type,
+                                depth - 1,
+                                inputs,
+                                function_types,
+                                rng,
+                            )
+                            .map_err(|_| ())
+                        })
+                        .collect::<Result<Vec<_>, _>>();
+
+                let Ok(arguments) = arguments
+                else {
+                    continue;
+                };
+
+                if let Ok(connection) =
+                    Connection::apply(
+                        function,
+                        arguments,
+                        function_types,
+                    )
+                {
+                    return Ok(connection);
+                }
+            }
+        }
     }
 
     let mut groups =
@@ -40,6 +347,7 @@ fn build_connection(
                         *input_type,
                         depth - 1,
                         inputs,
+                        function_types,
                         rng,
                     )
                     .map(Box::new)
@@ -670,6 +978,7 @@ mod tests
     use super::*;
     use crate::NamedTerminal;
     use crate::function::Function;
+    use rand::SeedableRng;
 
     #[test]
     fn crop_can_be_generated_from_typed_inputs() {
@@ -1924,11 +2233,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            FunctionTypeRegistry::new();
+            
         let connection =
             build_connection(
                 Type::Grid,
                 0,
                 &inputs,
+                &mut function_types,
                 &mut rng,
             )
             .expect("expected a Grid input");
@@ -1950,11 +2263,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            FunctionTypeRegistry::new();
+            
         let connection =
             build_connection(
                 Type::Grid,
                 1,
                 &inputs,
+                &mut function_types,
                 &mut rng,
             )
             .expect("expected a Grid primitive");
@@ -1979,10 +2296,14 @@ mod tests
         let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
         let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
 
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
         let connection1 = build_connection(
             Type::Grid,
             2,
             &inputs,
+            &mut function_types,
             &mut rng1,
         )
         .expect("expected a connection");
@@ -1991,6 +2312,7 @@ mod tests
             Type::Grid,
             2,
             &inputs,
+            &mut function_types,
             &mut rng2,
         )
         .expect("expected a connection");
@@ -2031,14 +2353,406 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(42);
 
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
         let connection = build_connection(
             Type::Grid,
             3,
             &inputs,
+            &mut function_types,
             &mut rng,
         )
         .expect("expected a connection");
 
         assert!(connection_depth(&connection) <= 3);
+    }
+
+    #[test]
+    fn lbind_candidates_find_source_function_type() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let Type::Function(source_id) = source_type else {
+            panic!("expected function type");
+        };
+
+        let output_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let candidates =
+            lbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![(source_id, Type::Integer)]
+        );
+    }
+
+    fn rbind_candidates(
+        output_type: Type,
+        function_types: &FunctionTypeRegistry,
+    ) -> Vec<(FunctionTypeId, Type)> {
+        let Type::Function(output_id) = output_type else {
+            return Vec::new();
+        };
+
+        let Some(output_inputs) =
+            function_types.inputs(output_id)
+        else {
+            return Vec::new();
+        };
+
+        let Some(output_output) =
+            function_types.output(output_id)
+        else {
+            return Vec::new();
+        };
+
+        function_types
+            .all_types()
+            .filter_map(|(source_id, source_type)| {
+                if source_type.inputs.len()
+                    != output_inputs.len() + 1
+                {
+                    return None;
+                }
+
+                let last = source_type.inputs.len() - 1;
+
+                if source_type.inputs[..last]
+                    != *output_inputs
+                {
+                    return None;
+                }
+
+                if source_type.output != output_output {
+                    return None;
+                }
+
+                Some((
+                    source_id,
+                    source_type.inputs[last],
+                ))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rbind_candidates_find_source_function_type() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let Type::Function(source_id) = source_type else {
+            panic!("expected function type");
+        };
+
+        let output_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let candidates =
+            rbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![(source_id, Type::Integer)]
+        );
+    }
+
+    #[test]
+    fn apply_candidates_find_functions_with_requested_output() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let integer_function =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let tuple_function =
+            function_types.type_of(
+                &[Type::IntegerTuple],
+                Type::Integer,
+            );
+
+        let Type::Function(integer_id) = integer_function else {
+            panic!("expected function type");
+        };
+
+        let Type::Function(tuple_id) = tuple_function else {
+            panic!("expected function type");
+        };
+
+        let candidates =
+            apply_candidates(
+                Type::Integer,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![integer_id, tuple_id]
+        );
+    }
+
+    #[test]
+    fn lbind_candidates_handle_multi_argument_functions() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[Type::Integer, Type::Grid, Type::IntegerTuple],
+            Type::Object,
+        );
+
+        let Type::Function(source_id) = source_type else {
+            panic!("expected function type");
+        };
+
+        let output_type = function_types.type_of(
+            &[Type::Grid, Type::IntegerTuple],
+            Type::Object,
+        );
+
+        let candidates =
+            lbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![(source_id, Type::Integer)]
+        );
+    }
+
+    #[test]
+    fn build_connection_can_build_lbind() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let output_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let inputs = vec![
+            InputSpec {
+                name: "F".to_string(),
+                ty: source_type,
+            },
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Integer,
+            },
+        ];
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(0);
+
+        let connection = build_connection(
+            output_type,
+            1,
+            &inputs,
+            &mut function_types,
+            &mut rng,
+        )
+        .expect("expected lbind connection");
+
+        assert!(matches!(
+            connection,
+            Connection::Dynamic { .. }
+        ));
+    }
+
+    #[test]
+    fn build_connection_can_build_rbind() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[
+                Type::Integer,
+                Type::Grid,
+                Type::IntegerTuple,
+            ],
+            Type::Object,
+        );
+
+        let output_type = function_types.type_of(
+            &[Type::Integer, Type::Grid],
+            Type::Object,
+        );
+
+        let inputs = vec![
+            InputSpec {
+                name: "F".to_string(),
+                ty: source_type,
+            },
+            InputSpec {
+                name: "T".to_string(),
+                ty: Type::IntegerTuple,
+            },
+        ];
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(0);
+
+        let connection = build_connection(
+            output_type,
+            1,
+            &inputs,
+            &mut function_types,
+            &mut rng,
+        )
+        .expect("expected rbind connection");
+
+        assert!(matches!(
+            connection,
+            Connection::Dynamic {
+                primitive: DynamicPrimitive::Rbind,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn build_connection_can_build_apply() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let inputs = vec![
+            InputSpec {
+                name: "F".to_string(),
+                ty: function_type,
+            },
+            InputSpec {
+                name: "A".to_string(),
+                ty: Type::Integer,
+            },
+            InputSpec {
+                name: "B".to_string(),
+                ty: Type::Integer,
+            },
+        ];
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(0);
+
+        let connection = build_connection(
+            Type::Integer,
+            1,
+            &inputs,
+            &mut function_types,
+            &mut rng,
+        )
+        .expect("expected apply connection");
+
+        assert!(matches!(
+            connection,
+            Connection::Dynamic {
+                primitive: DynamicPrimitive::Apply,
+                ..
+            }
+        ));
+
+        assert_eq!(
+            connection.output_type_with(&mut function_types),
+            Type::Integer
+        );
+    }
+
+    #[test]
+    fn dynamic_candidates_collect_all_dynamic_families() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let source_type =
+            function_types.type_of(
+                &[Type::Integer, Type::Integer],
+                Type::Integer,
+            );
+
+        let output_type =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let apply_source_type =
+            function_types.type_of(
+                &[Type::Integer],
+                output_type,
+            );
+
+        let source_id = match source_type {
+            Type::Function(id) => id,
+            _ => unreachable!(),
+        };
+
+        let apply_source_id = match apply_source_type {
+            Type::Function(id) => id,
+            _ => unreachable!(),
+        };
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(0);
+
+        let candidates = dynamic_candidates(
+            output_type,
+            &function_types,
+            &mut rng,
+        );
+
+        assert!(candidates.iter().any(|candidate| {
+            matches!(
+                candidate,
+                DynamicCandidate::Lbind(id, Type::Integer)
+                    if *id == source_id
+            )
+        }));
+
+        assert!(candidates.iter().any(|candidate| {
+            matches!(
+                candidate,
+                DynamicCandidate::Rbind(id, Type::Integer)
+                    if *id == source_id
+            )
+        }));
+
+        assert!(candidates.iter().any(|candidate| {
+            matches!(
+                candidate,
+                DynamicCandidate::Apply(id)
+                    if *id == apply_source_id
+            )
+        }));
     }
 }
