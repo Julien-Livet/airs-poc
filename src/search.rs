@@ -91,6 +91,92 @@ fn generate_apply(
     programs
 }
 
+fn generate_rbind(
+    output_type: Type,
+    depth: usize,
+    terminals: &Terminals,
+    inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
+) -> Vec<Connection> {
+    let mut programs = Vec::new();
+
+    let Type::Function(output_id) = output_type else {
+        return programs;
+    };
+
+    let Some(output_inputs) =
+        function_types.inputs(output_id)
+    else {
+        return programs;
+    };
+
+    let Some(output_output) =
+        function_types.output(output_id)
+    else {
+        return programs;
+    };
+
+    let candidates = function_types
+        .all_types()
+        .filter_map(|(source_id, source_type)| {
+            if source_type.inputs.len()
+                != output_inputs.len() + 1
+            {
+                return None;
+            }
+
+            let last = source_type.inputs.len() - 1;
+
+            if source_type.inputs[..last]
+                != *output_inputs
+            {
+                return None;
+            }
+
+            if source_type.output != output_output {
+                return None;
+            }
+
+            Some((
+                Type::Function(source_id),
+                source_type.inputs[last],
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    for (source_type, fixed_type) in candidates {
+        let functions = generate_bounded(
+            source_type,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        let fixed_values = generate_bounded(
+            fixed_type,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        for function in functions {
+            for fixed in &fixed_values {
+                if let Ok(connection) = Connection::rbind(
+                    function.clone(),
+                    fixed.clone(),
+                    function_types,
+                ) {
+                    programs.push(connection);
+                }
+            }
+        }
+    }
+
+    programs
+}
+
 fn generate_lbind(
     output_type: Type,
     depth: usize,
@@ -315,6 +401,16 @@ pub fn generate(
     );
 
     programs.extend(
+        generate_rbind(
+            output_type,
+            depth,
+            terminals,
+            inputs,
+            function_types,
+        )
+    );
+
+    programs.extend(
         generate_apply(
             output_type,
             depth,
@@ -402,6 +498,16 @@ fn generate_bounded(
 
     programs.extend(
         generate_lbind(
+            output_type,
+            depth,
+            terminals,
+            inputs,
+            function_types,
+        )
+    );
+
+    programs.extend(
+        generate_rbind(
             output_type,
             depth,
             terminals,
