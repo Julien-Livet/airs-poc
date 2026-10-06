@@ -62,6 +62,37 @@ impl Function {
 
         Ok(Function::new(inputs, body))
     }
+
+    pub fn rbind(
+        &self,
+        fixed: Connection,
+    ) -> Result<Function, String> {
+        let last = self
+            .inputs
+            .last()
+            .ok_or_else(|| "cannot rbind a function with no inputs".to_string())?;
+
+        if last.ty != fixed.output_type() {
+            return Err(format!(
+                "rbind type mismatch: expected {:?}, got {:?}",
+                last.ty,
+                fixed.output_type()
+            ));
+        }
+
+        let body = self.body.substitute_input(
+            &last.name,
+            &fixed,
+        );
+
+        let inputs = self.inputs
+            .iter()
+            .take(self.inputs.len() - 1)
+            .cloned()
+            .collect();
+
+        Ok(Function::new(inputs, body))
+    }
 }
 
 impl Function {
@@ -363,6 +394,165 @@ mod tests {
         let bound = function
             .lbind(fixed)
             .expect("lbind must succeed");
+
+        assert_eq!(
+            bound.inputs.len(),
+            1
+        );
+
+        assert_eq!(
+            bound.inputs[0].ty,
+            Type::Integer
+        );
+
+        assert_eq!(
+            bound.body_type(),
+            Type::Integer
+        );
+    }
+
+    #[test]
+    fn rbind_fixes_last_function_input() {
+        let x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(x.connection()),
+                Box::new(y.connection()),
+            ],
+        )
+        .expect("add(X, Y) must be valid");
+
+        let function = Function::new(
+            vec![x, y],
+            body,
+        );
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let bound = function
+            .rbind(two)
+            .expect("rbind must succeed");
+
+        assert_eq!(bound.inputs.len(), 1);
+        assert_eq!(bound.inputs[0].name, "X");
+        assert_eq!(bound.inputs[0].ty, Type::Integer);
+
+        assert_eq!(
+            bound.body.expression(),
+            "add(X, TWO)"
+        );
+    }
+
+    #[test]
+    fn rbind_function_can_be_applied() {
+        let x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("add(Integer, Integer) must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(x.connection()),
+                Box::new(y.connection()),
+            ],
+        )
+        .expect("add(X, Y) must be valid");
+
+        let function = Function::new(
+            vec![x, y],
+            body,
+        );
+
+        let two = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let bound = function
+            .rbind(two)
+            .expect("rbind must succeed");
+
+        let result = bound
+            .apply_values(vec![Value::Integer(3)])
+            .expect("bound function must apply");
+
+        match result {
+            Value::Integer(value) => assert_eq!(value, 5),
+            other => panic!("expected Integer(5), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn rbind_function_type_matches_registry() {
+        let input_x = InputSpec {
+            name: "X".to_string(),
+            ty: Type::Integer,
+        };
+
+        let input_y = InputSpec {
+            name: "Y".to_string(),
+            ty: Type::Integer,
+        };
+
+        let add = crate::registry::find_by_name_and_inputs(
+            "add",
+            &[Type::Integer, Type::Integer],
+        )
+        .expect("integer add must exist");
+
+        let body = Connection::new(
+            add,
+            vec![
+                Box::new(input_x.connection()),
+                Box::new(input_y.connection()),
+            ],
+        )
+        .expect("add connection must be valid");
+
+        let function = Function::new(
+            vec![input_x, input_y],
+            body,
+        );
+
+        let fixed = Connection::named_terminal(
+            "TWO",
+            Value::Integer(2),
+        );
+
+        let bound = function
+            .rbind(fixed)
+            .expect("rbind must succeed");
 
         assert_eq!(
             bound.inputs.len(),
