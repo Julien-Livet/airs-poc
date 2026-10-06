@@ -1,8 +1,137 @@
 use crate::connection::{Connection, Terminals};
-use crate::registry::{Type, Value};
+use crate::registry::{Type, Value, PrimitiveEntry};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
 use crate::signature::InputSpec;
+use std::collections::BTreeMap;
+use rand::seq::SliceRandom;
+
+fn build_connection(
+    output_type: Type,
+    depth: usize,
+    inputs: &[InputSpec],
+    rng: &mut impl rand::Rng,
+) -> Result<Connection, String> {
+    if depth == 0 {
+        return choose_input(output_type, inputs, rng)
+            .ok_or_else(|| {
+                format!(
+                    "no input available for type {:?}",
+                    output_type
+                )
+            });
+    }
+
+    let mut groups =
+        shuffled_primitive_groups(output_type, rng);
+
+    shuffle_primitive_overloads(
+        &mut groups,
+        rng,
+    );
+
+    for group in &groups {
+        for primitive in group {
+            let inputs = primitive
+                .inputs
+                .iter()
+                .map(|input_type| {
+                    build_connection(
+                        *input_type,
+                        depth - 1,
+                        inputs,
+                        rng,
+                    )
+                    .map(Box::new)
+                })
+                .collect::<Result<Vec<_>, _>>();
+
+            let Ok(inputs) = inputs else {
+                continue;
+            };
+
+            if let Ok(connection) =
+                Connection::new(*primitive, inputs)
+            {
+                return Ok(connection);
+            }
+        }
+    }
+
+    Err(format!(
+        "could not build connection for type {:?} at depth {}",
+        output_type,
+        depth
+    ))
+}
+
+fn choose_input(
+    output_type: Type,
+    inputs: &[InputSpec],
+    rng: &mut impl rand::Rng,
+) -> Option<Connection> {
+    let mut candidates = inputs
+        .iter()
+        .filter(|input| input.ty == output_type)
+        .map(InputSpec::connection)
+        .collect::<Vec<_>>();
+
+    candidates.shuffle(rng);
+
+    candidates.into_iter().next()
+}
+
+fn choose_primitive(
+    groups: &[Vec<&'static PrimitiveEntry>],
+) -> Option<&'static PrimitiveEntry> {
+    groups
+        .first()
+        .and_then(|group| group.first())
+        .copied()
+}
+
+fn shuffle_primitive_overloads(
+    groups: &mut [Vec<&'static PrimitiveEntry>],
+    rng: &mut impl rand::Rng,
+) {
+    for group in groups {
+        group.shuffle(rng);
+    }
+}
+
+fn shuffled_primitive_groups(
+    output_type: Type,
+    rng: &mut impl rand::Rng,
+) -> Vec<Vec<&'static PrimitiveEntry>> {
+    let candidates =
+        primitive_candidates_by_name(output_type);
+
+    let mut groups: Vec<_> =
+        candidates.into_values().collect();
+
+    groups.shuffle(rng);
+
+    groups
+}
+
+fn primitive_candidates_by_name(
+    output_type: Type,
+) -> BTreeMap<&'static str, Vec<&'static PrimitiveEntry>> {
+    let mut candidates = BTreeMap::new();
+
+    for primitive in crate::registry::PRIMITIVES {
+        if primitive.output != output_type {
+            continue;
+        }
+
+        candidates
+            .entry(primitive.name)
+            .or_insert_with(Vec::new)
+            .push(primitive);
+    }
+
+    candidates
+}
 
 fn generate_apply(
     output_type: Type,
@@ -1697,5 +1826,219 @@ mod tests
                 );
             }
         }
+    }
+
+    #[test]
+    fn primitive_candidates_are_grouped_by_name() {
+        let mut rng = rand::rng();
+
+        let groups =
+            shuffled_primitive_groups(Type::Grid, &mut rng);
+
+        assert!(!groups.is_empty());
+
+        for group in groups {
+            assert!(!group.is_empty());
+
+            let name = group[0].name;
+
+            assert!(group.iter().all(|primitive| {
+                primitive.name == name
+            }));
+        }
+    }
+
+    #[test]
+    fn primitive_candidates_are_grouped_and_shuffled() {
+        let mut rng = rand::rng();
+
+        let mut groups =
+            shuffled_primitive_groups(Type::Grid, &mut rng);
+
+        shuffle_primitive_overloads(
+            &mut groups,
+            &mut rng,
+        );
+
+        assert!(!groups.is_empty());
+
+        for group in groups {
+            assert!(!group.is_empty());
+
+            let name = group[0].name;
+
+            assert!(group.iter().all(|primitive| {
+                primitive.name == name
+            }));
+        }
+    }
+
+    #[test]
+    fn can_choose_a_primitive_for_output_type() {
+        let mut rng = rand::rng();
+
+        let mut groups =
+            shuffled_primitive_groups(Type::Grid, &mut rng);
+
+        shuffle_primitive_overloads(
+            &mut groups,
+            &mut rng,
+        );
+
+        let primitive = choose_primitive(&groups)
+            .expect("expected a Grid-producing primitive");
+
+        assert_eq!(primitive.output, Type::Grid);
+    }
+
+    #[test]
+    fn can_choose_input_at_depth_zero() {
+        let mut rng = rand::rng();
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+            InputSpec {
+                name: "N".to_string(),
+                ty: Type::Integer,
+            },
+        ];
+
+        let connection =
+            choose_input(Type::Grid, &inputs, &mut rng)
+                .expect("expected a Grid input");
+
+        assert_eq!(connection.output_type(), Type::Grid);
+    }
+
+    #[test]
+    fn build_connection_handles_depth_zero() {
+        let mut rng = rand::rng();
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+        ];
+
+        let connection =
+            build_connection(
+                Type::Grid,
+                0,
+                &inputs,
+                &mut rng,
+            )
+            .expect("expected a Grid input");
+
+        assert_eq!(
+            connection.output_type(),
+            Type::Grid
+        );
+    }
+
+    #[test]
+    fn build_connection_selects_primitive_above_depth_zero() {
+        let mut rng = rand::rng();
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+        ];
+
+        let connection =
+            build_connection(
+                Type::Grid,
+                1,
+                &inputs,
+                &mut rng,
+            )
+            .expect("expected a Grid primitive");
+
+        assert_eq!(
+            connection.output_type(),
+            Type::Grid
+        );
+    }
+
+    #[test]
+    fn build_connection_is_reproducible_with_seeded_rng() {
+        use rand::SeedableRng;
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+        ];
+
+        let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
+        let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
+
+        let connection1 = build_connection(
+            Type::Grid,
+            2,
+            &inputs,
+            &mut rng1,
+        )
+        .expect("expected a connection");
+
+        let connection2 = build_connection(
+            Type::Grid,
+            2,
+            &inputs,
+            &mut rng2,
+        )
+        .expect("expected a connection");
+
+        assert_eq!(
+            connection1.expression(),
+            connection2.expression()
+        );
+    }
+
+    fn connection_depth(connection: &Connection) -> usize {
+        match connection {
+            Connection::Input { .. }
+            | Connection::Constant { .. } => 0,
+
+            Connection::Primitive { inputs, .. }
+            | Connection::Dynamic { inputs, .. } => {
+                1 + inputs
+                    .iter()
+                    .map(|input| connection_depth(input))
+                    .max()
+                    .unwrap_or(0)
+            }
+        }
+    }
+
+    #[test]
+    fn build_connection_respects_requested_depth() {
+        use rand::SeedableRng;
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+        ];
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(42);
+
+        let connection = build_connection(
+            Type::Grid,
+            3,
+            &inputs,
+            &mut rng,
+        )
+        .expect("expected a connection");
+
+        assert!(connection_depth(&connection) <= 3);
     }
 }
