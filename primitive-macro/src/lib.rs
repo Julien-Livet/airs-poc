@@ -157,6 +157,7 @@ fn primitive_impl(
         }
 
         #[linkme::distributed_slice(crate::registry::PRIMITIVES)]
+        #[allow(non_upper_case_globals)]
         pub static #entry_name: crate::registry::PrimitiveEntry =
             crate::registry::PrimitiveEntry {
                 name: #name,
