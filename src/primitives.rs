@@ -1,9 +1,12 @@
-use crate::types::{Grid, Indices, Integer, IntegerTuple, Object};
+use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
+use primitive_macro::primitive;
 
-pub fn flip(value: bool) -> bool {
+#[primitive("flip")]
+pub fn flip(value: Boolean) -> Boolean {
     !value
 }
 
+#[primitive("add")]
 pub fn add(a: Integer, b: Integer) -> Integer {
     let c = a + b;
 
@@ -14,6 +17,7 @@ pub fn add(a: Integer, b: Integer) -> Integer {
     c
 }
 
+#[primitive("add")]
 pub fn add_tuple_tuple(
     a: IntegerTuple,
     b: IntegerTuple,
@@ -30,6 +34,7 @@ pub fn add_tuple_tuple(
     result
 }
 
+#[primitive("add")]
 pub fn add_integer_tuple(
     a: Integer,
     b: IntegerTuple,
@@ -46,6 +51,7 @@ pub fn add_integer_tuple(
     result
 }
 
+#[primitive("add")]
 pub fn add_tuple_integer(
     a: IntegerTuple,
     b: Integer,
@@ -62,8 +68,9 @@ pub fn add_tuple_integer(
     result
 }
 
+#[primitive("subtract")]
 pub fn subtract(a: Integer, b: Integer) -> Integer {
-    let c = a - b;
+    let c: i16 = a - b;
 
     if c == a || c == b {
         panic!("subtract produced identity");
@@ -72,6 +79,7 @@ pub fn subtract(a: Integer, b: Integer) -> Integer {
     c
 }
 
+#[primitive("subtract")]
 pub fn subtract_tuple_tuple(
     a: IntegerTuple,
     b: IntegerTuple,
@@ -88,6 +96,7 @@ pub fn subtract_tuple_tuple(
     result
 }
 
+#[primitive("subtract")]
 pub fn subtract_integer_tuple(
     a: Integer,
     b: IntegerTuple,
@@ -104,6 +113,7 @@ pub fn subtract_integer_tuple(
     result
 }
 
+#[primitive("subtract")]
 pub fn subtract_tuple_integer(
     a: IntegerTuple,
     b: Integer,
@@ -120,6 +130,7 @@ pub fn subtract_tuple_integer(
     result
 }
 
+#[primitive("multiply")]
 pub fn multiply(a: Integer, b: Integer) -> Integer {
     let c = a * b;
 
@@ -130,6 +141,7 @@ pub fn multiply(a: Integer, b: Integer) -> Integer {
     c
 }
 
+#[primitive("multiply")]
 pub fn multiply_tuple_tuple(
     a: IntegerTuple,
     b: IntegerTuple,
@@ -146,6 +158,7 @@ pub fn multiply_tuple_tuple(
     result
 }
 
+#[primitive("multiply")]
 pub fn multiply_integer_tuple(
     a: Integer,
     b: IntegerTuple,
@@ -162,6 +175,7 @@ pub fn multiply_integer_tuple(
     result
 }
 
+#[primitive("multiply")]
 pub fn multiply_tuple_integer(
     a: IntegerTuple,
     b: Integer,
@@ -178,6 +192,7 @@ pub fn multiply_tuple_integer(
     result
 }
 
+#[primitive("divide")]
 pub fn divide(a: Integer, b: Integer) -> Integer {
     if b == 0 {
         panic!("division by zero");
@@ -192,6 +207,7 @@ pub fn divide(a: Integer, b: Integer) -> Integer {
     c
 }
 
+#[primitive("divide")]
 pub fn divide_tuple_tuple(
     a: IntegerTuple,
     b: IntegerTuple,
@@ -212,6 +228,7 @@ pub fn divide_tuple_tuple(
     result
 }
 
+#[primitive("divide")]
 pub fn divide_integer_tuple(
     a: Integer,
     b: IntegerTuple,
@@ -232,6 +249,7 @@ pub fn divide_integer_tuple(
     result
 }
 
+#[primitive("divide")]
 pub fn divide_tuple_integer(
     a: IntegerTuple,
     b: Integer,
@@ -252,6 +270,7 @@ pub fn divide_tuple_integer(
     result
 }
 
+#[primitive("hmirror")]
 pub fn hmirror(mut grid: Grid) -> Grid {
     let original = grid.clone();
 
@@ -266,6 +285,7 @@ pub fn hmirror(mut grid: Grid) -> Grid {
     grid
 }
 
+#[primitive("hmirror")]
 pub fn hmirror_object(object: Object) -> Object {
     let (y_min, y_max) = object
         .iter()
@@ -288,6 +308,7 @@ pub fn hmirror_object(object: Object) -> Object {
     result
 }
 
+#[primitive("hmirror")]
 pub fn hmirror_indices(indices: Indices) -> Indices {
     let (y_min, y_max) = indices
         .iter()
@@ -310,6 +331,7 @@ pub fn hmirror_indices(indices: Indices) -> Indices {
     result
 }
 
+#[primitive("vmirror")]
 pub fn vmirror(mut grid: Grid) -> Grid {
     let original = grid.clone();
 
@@ -321,6 +343,8 @@ pub fn vmirror(mut grid: Grid) -> Grid {
 
     grid
 }
+
+#[primitive("vmirror")]
 pub fn vmirror_object(object: Object) -> Object {
     let (x_min, x_max) = object
         .iter()
@@ -343,6 +367,7 @@ pub fn vmirror_object(object: Object) -> Object {
     result
 }
 
+#[primitive("vmirror")]
 pub fn vmirror_indices(indices: Indices) -> Indices {
     let (x_min, x_max) = indices
         .iter()
@@ -365,6 +390,7 @@ pub fn vmirror_indices(indices: Indices) -> Indices {
     result
 }
 
+#[primitive("dmirror")]
 pub fn dmirror(grid: Grid) -> Grid {
     let original = grid.clone();
 
@@ -386,6 +412,7 @@ pub fn dmirror(grid: Grid) -> Grid {
     result
 }
 
+#[primitive("dmirror")]
 pub fn dmirror_object(object: Object) -> Object {
     let (y_min, _y_max) = object
         .iter()
@@ -421,6 +448,7 @@ pub fn dmirror_object(object: Object) -> Object {
     result
 }
 
+#[primitive("dmirror")]
 pub fn dmirror_indices(indices: Indices) -> Indices {
     let (y_min, _y_max) = indices
         .iter()
@@ -453,6 +481,7 @@ pub fn dmirror_indices(indices: Indices) -> Indices {
     result
 }
 
+#[primitive("cmirror")]
 pub fn cmirror(grid: Grid) -> Grid {
     let original = grid.clone();
 
@@ -475,6 +504,7 @@ pub fn cmirror(grid: Grid) -> Grid {
     result
 }
 
+#[primitive("cmirror")]
 pub fn cmirror_object(object: Object) -> Object {
     let (y_min, y_max) = object
         .iter()
@@ -510,6 +540,7 @@ pub fn cmirror_object(object: Object) -> Object {
     result
 }
 
+#[primitive("cmirror")]
 pub fn cmirror_indices(indices: Indices) -> Indices {
     let (y_min, y_max) = indices
         .iter()
@@ -542,11 +573,22 @@ pub fn cmirror_indices(indices: Indices) -> Indices {
     result
 }
 
+#[primitive("vconcat")]
 pub fn vconcat(mut top: Grid, bottom: Grid) -> Grid {
     top.extend(bottom);
     top
 }
 
+#[primitive("hconcat")]
+pub fn hconcat(mut left: Grid, right: Grid) -> Grid {
+    for (left_row, right_row) in left.iter_mut().zip(right) {
+        left_row.extend(right_row);
+    }
+
+    left
+}
+
+#[primitive("ulcorner")]
 pub fn ulcorner(indices: Indices) -> IntegerTuple {
     indices
         .iter()
@@ -557,6 +599,7 @@ pub fn ulcorner(indices: Indices) -> IntegerTuple {
         .expect("empty Indices")
 }
 
+#[primitive("urcorner")]
 pub fn urcorner(indices: Indices) -> IntegerTuple {
     indices
         .iter()
@@ -567,6 +610,7 @@ pub fn urcorner(indices: Indices) -> IntegerTuple {
         .expect("empty Indices")
 }
 
+#[primitive("llcorner")]
 pub fn llcorner(indices: Indices) -> IntegerTuple {
     indices
         .iter()
@@ -577,6 +621,7 @@ pub fn llcorner(indices: Indices) -> IntegerTuple {
         .expect("empty Indices")
 }
 
+#[primitive("lrcorner")]
 pub fn lrcorner(indices: Indices) -> IntegerTuple {
     indices
         .iter()
@@ -587,6 +632,7 @@ pub fn lrcorner(indices: Indices) -> IntegerTuple {
         .expect("empty Indices")
 }
 
+#[primitive("crop")]
 pub fn crop(
     grid: Grid,
     ul: IntegerTuple,
