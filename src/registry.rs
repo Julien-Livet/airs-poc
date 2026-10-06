@@ -12,6 +12,22 @@ pub enum DynamicPrimitive {
     Apply,
 }
 
+impl DynamicPrimitive {
+    pub fn name(self) -> &'static str {
+        match self {
+            DynamicPrimitive::Lbind => "lbind",
+            DynamicPrimitive::Apply => "apply",
+        }
+    }
+}
+
+pub fn dynamic_primitives() -> &'static [DynamicPrimitive] {
+    &[
+        DynamicPrimitive::Lbind,
+        DynamicPrimitive::Apply,
+    ]
+}
+
 pub fn lbind_value(
     function: &Value,
     fixed: &Value,
@@ -67,6 +83,58 @@ pub struct FunctionTypeRegistry {
 }
 
 impl FunctionTypeRegistry {
+    pub fn inputs(&self, id: FunctionTypeId) -> Option<&[Type]> {
+        self.get(id).map(|function| {
+            function.inputs.as_slice()
+        })
+    }
+
+    pub fn output(&self, id: FunctionTypeId) -> Option<Type> {
+        self.get(id).map(|function| function.output)
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = (FunctionTypeId, &FunctionType)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(index, function_type)| {
+                (
+                    FunctionTypeId(index as u32),
+                    function_type,
+                )
+            })
+    }
+
+    pub fn can_lbind(
+        &self,
+        function_type: Type,
+        fixed_type: Type,
+    ) -> bool {
+        let id = match function_type {
+            Type::Function(id) => id,
+            _ => return false,
+        };
+
+        let function = match self.get(id) {
+            Some(function) => function,
+            None => return false,
+        };
+
+        !function.inputs.is_empty()
+            && function.inputs[0] == fixed_type
+    }
+
+    pub fn can_apply(
+        &self,
+        function_type: Type,
+        argument_types: &[Type],
+    ) -> bool {
+        self.apply_type(
+            function_type,
+            argument_types,
+        ).is_ok()
+    }
+
     pub fn type_of(
         &mut self,
         inputs: &[Type],
@@ -2698,5 +2766,148 @@ mod tests
                 panic!("expected Integer, got {:?}", other);
             }
         }
+    }
+
+    #[test]
+    fn dynamic_primitive_names_are_stable() {
+        assert_eq!(
+            DynamicPrimitive::Lbind.name(),
+            "lbind",
+        );
+
+        assert_eq!(
+            DynamicPrimitive::Apply.name(),
+            "apply",
+        );
+    }
+
+    #[test]
+    fn can_lbind_checks_function_and_fixed_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        assert!(
+            registry.can_lbind(
+                function_type,
+                Type::Integer,
+            )
+        );
+
+        assert!(
+            !registry.can_lbind(
+                function_type,
+                Type::Grid,
+            )
+        );
+
+        assert!(
+            !registry.can_lbind(
+                Type::Integer,
+                Type::Integer,
+            )
+        );
+    }
+
+    #[test]
+    fn can_apply_checks_function_and_argument_types() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        assert!(
+            registry.can_apply(
+                function_type,
+                &[Type::Integer, Type::Integer],
+            )
+        );
+
+        assert!(
+            !registry.can_apply(
+                function_type,
+                &[Type::Integer],
+            )
+        );
+
+        assert!(
+            !registry.can_apply(
+                function_type,
+                &[Type::Integer, Type::Grid],
+            )
+        );
+
+        assert!(
+            !registry.can_apply(
+                Type::Integer,
+                &[Type::Integer],
+            )
+        );
+    }
+
+    #[test]
+    fn dynamic_primitives_contains_lbind_and_apply() {
+        let primitives = dynamic_primitives();
+
+        assert!(
+            primitives.contains(&DynamicPrimitive::Lbind)
+        );
+
+        assert!(
+            primitives.contains(&DynamicPrimitive::Apply)
+        );
+    }
+
+    #[test]
+    fn all_types_returns_interned_function_types() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let id = registry.intern(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let types = registry
+            .all_types()
+            .collect::<Vec<_>>();
+
+        assert_eq!(types.len(), 1);
+        assert_eq!(types[0].0, id);
+        assert_eq!(
+            types[0].1.inputs,
+            vec![Type::Integer],
+        );
+        assert_eq!(
+            types[0].1.output,
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn function_type_accessors_return_signature() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let id = registry.intern(
+            &[Type::Integer, Type::Grid],
+            Type::Object,
+        );
+
+        assert_eq!(
+            registry.inputs(id),
+            Some(&[
+                Type::Integer,
+                Type::Grid,
+            ][..]),
+        );
+
+        assert_eq!(
+            registry.output(id),
+            Some(Type::Object),
+        );
     }
 }
