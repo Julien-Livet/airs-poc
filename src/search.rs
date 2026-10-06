@@ -6,6 +6,34 @@ use crate::signature::InputSpec;
 use std::collections::BTreeMap;
 use rand::seq::SliceRandom;
 
+fn primitive_candidate_group(
+    name: &'static str,
+    candidates: Vec<&'static PrimitiveEntry>,
+) -> Option<CandidateGroup> {
+    if candidates.is_empty() {
+        return None;
+    }
+
+    Some(CandidateGroup::Primitive {
+        name,
+        candidates,
+    })
+}
+
+fn dynamic_candidate_group(
+    name: &'static str,
+    candidates: Vec<DynamicCandidate>,
+) -> Option<CandidateGroup> {
+    if candidates.is_empty() {
+        return None;
+    }
+
+    Some(CandidateGroup::Dynamic {
+        name,
+        candidates,
+    })
+}
+
 fn shuffle_candidate_groups(
     groups: &mut [CandidateGroup],
     rng: &mut impl rand::Rng,
@@ -41,71 +69,95 @@ enum CandidateGroup {
     },
 }
 
+impl CandidateGroup {
+    fn name(&self) -> &'static str {
+        match self {
+            CandidateGroup::Dynamic { name, .. } => name,
+            CandidateGroup::Primitive { name, .. } => name,
+        }
+    }
+}
+
+impl CandidateGroup {
+    fn len(&self) -> usize {
+        match self {
+            CandidateGroup::Dynamic {
+                candidates, ..
+            } => candidates.len(),
+
+            CandidateGroup::Primitive {
+                candidates, ..
+            } => candidates.len(),
+        }
+    }
+}
+
 fn candidate_groups(
     output_type: Type,
     function_types: &FunctionTypeRegistry,
 ) -> Vec<CandidateGroup> {
     let mut groups = Vec::new();
 
-    let mut lbind =
-        lbind_candidates(
-            output_type,
-            function_types,
-        );
-
-    if !lbind.is_empty() {
-        groups.push(CandidateGroup::Dynamic {
-            name: "lbind",
-            candidates: lbind
-                .drain(..)
-                .map(|(id, ty)| {
-                    DynamicCandidate::Lbind(id, ty)
-                })
-                .collect(),
-        });
+    if let Some(group) =
+        dynamic_candidate_group(
+            "lbind",
+            lbind_candidates(
+                output_type,
+                function_types,
+            )
+            .into_iter()
+            .map(|(id, ty)| {
+                DynamicCandidate::Lbind(id, ty)
+            })
+            .collect(),
+        )
+    {
+        groups.push(group);
     }
 
-    let mut rbind =
-        rbind_candidates(
-            output_type,
-            function_types,
-        );
-
-    if !rbind.is_empty() {
-        groups.push(CandidateGroup::Dynamic {
-            name: "rbind",
-            candidates: rbind
-                .drain(..)
-                .map(|(id, ty)| {
-                    DynamicCandidate::Rbind(id, ty)
-                })
-                .collect(),
-        });
+    if let Some(group) =
+        dynamic_candidate_group(
+            "rbind",
+            rbind_candidates(
+                output_type,
+                function_types,
+            )
+            .into_iter()
+            .map(|(id, ty)| {
+                DynamicCandidate::Rbind(id, ty)
+            })
+            .collect(),
+        )
+    {
+        groups.push(group);
     }
 
-    let mut apply =
-        apply_candidates(
-            output_type,
-            function_types,
-        );
-
-    if !apply.is_empty() {
-        groups.push(CandidateGroup::Dynamic {
-            name: "apply",
-            candidates: apply
-                .drain(..)
-                .map(DynamicCandidate::Apply)
-                .collect(),
-        });
+    if let Some(group) =
+        dynamic_candidate_group(
+            "apply",
+            apply_candidates(
+                output_type,
+                function_types,
+            )
+            .into_iter()
+            .map(DynamicCandidate::Apply)
+            .collect(),
+        )
+    {
+        groups.push(group);
     }
 
-    for group in primitive_candidates_by_name(output_type) {
-        let (name, candidates) = group;
-
-        groups.push(CandidateGroup::Primitive {
-            name,
-            candidates,
-        });
+    for (name, candidates) in
+        primitive_candidates_by_name(output_type)
+    {
+        if let Some(group) =
+            primitive_candidate_group(
+                name,
+                candidates,
+            )
+        {
+            groups.push(group);
+        }
     }
 
     groups
@@ -116,46 +168,6 @@ enum DynamicCandidate {
     Lbind(FunctionTypeId, Type),
     Rbind(FunctionTypeId, Type),
     Apply(FunctionTypeId),
-}
-
-fn dynamic_candidates(
-    output_type: Type,
-    function_types: &FunctionTypeRegistry,
-    rng: &mut impl rand::Rng,
-) -> Vec<DynamicCandidate> {
-    let mut candidates = Vec::new();
-
-    candidates.extend(
-        lbind_candidates(output_type, function_types)
-            .into_iter()
-            .map(|(function_id, fixed_type)| {
-                DynamicCandidate::Lbind(
-                    function_id,
-                    fixed_type,
-                )
-            }),
-    );
-
-    candidates.extend(
-        rbind_candidates(output_type, function_types)
-            .into_iter()
-            .map(|(function_id, fixed_type)| {
-                DynamicCandidate::Rbind(
-                    function_id,
-                    fixed_type,
-                )
-            }),
-    );
-
-    candidates.extend(
-        apply_candidates(output_type, function_types)
-            .into_iter()
-            .map(DynamicCandidate::Apply),
-    );
-
-    candidates.shuffle(rng);
-
-    candidates
 }
 
 fn apply_candidates(
@@ -2795,73 +2807,6 @@ mod tests
     }
 
     #[test]
-    fn dynamic_candidates_collect_all_dynamic_families() {
-        let mut function_types =
-            FunctionTypeRegistry::new();
-
-        let source_type =
-            function_types.type_of(
-                &[Type::Integer, Type::Integer],
-                Type::Integer,
-            );
-
-        let output_type =
-            function_types.type_of(
-                &[Type::Integer],
-                Type::Integer,
-            );
-
-        let apply_source_type =
-            function_types.type_of(
-                &[Type::Integer],
-                output_type,
-            );
-
-        let source_id = match source_type {
-            Type::Function(id) => id,
-            _ => unreachable!(),
-        };
-
-        let apply_source_id = match apply_source_type {
-            Type::Function(id) => id,
-            _ => unreachable!(),
-        };
-
-        let mut rng =
-            rand::rngs::StdRng::seed_from_u64(0);
-
-        let candidates = dynamic_candidates(
-            output_type,
-            &function_types,
-            &mut rng,
-        );
-
-        assert!(candidates.iter().any(|candidate| {
-            matches!(
-                candidate,
-                DynamicCandidate::Lbind(id, Type::Integer)
-                    if *id == source_id
-            )
-        }));
-
-        assert!(candidates.iter().any(|candidate| {
-            matches!(
-                candidate,
-                DynamicCandidate::Rbind(id, Type::Integer)
-                    if *id == source_id
-            )
-        }));
-
-        assert!(candidates.iter().any(|candidate| {
-            matches!(
-                candidate,
-                DynamicCandidate::Apply(id)
-                    if *id == apply_source_id
-            )
-        }));
-    }
-
-    #[test]
     fn candidate_groups_collect_dynamic_and_primitive_families() {
         let mut function_types =
             FunctionTypeRegistry::new();
@@ -2965,5 +2910,77 @@ mod tests
         after.sort_unstable();
 
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn candidate_group_has_family_name() {
+        let group =
+            CandidateGroup::Dynamic {
+                name: "lbind",
+                candidates: Vec::new(),
+            };
+
+        assert_eq!(group.name(), "lbind");
+        assert_eq!(group.len(), 0);
+    }
+
+    #[test]
+    fn candidate_groups_include_lbind_and_rbind() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let _source_type =
+            function_types.type_of(
+                &[Type::Integer, Type::Integer],
+                Type::Integer,
+            );
+
+        let output_type =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+        
+        let apply_source_type =
+        function_types.type_of(
+            &[Type::Integer],
+            output_type,
+        );
+    
+        let groups =
+            candidate_groups(
+                output_type,
+                &function_types,
+            );
+
+        let lbind =
+            groups.iter().find(|group| {
+                group.name() == "lbind"
+            });
+
+        let rbind =
+            groups.iter().find(|group| {
+                group.name() == "rbind"
+            });
+
+        assert_eq!(
+            lbind.map(CandidateGroup::len),
+            Some(1)
+        );
+
+        assert_eq!(
+            rbind.map(CandidateGroup::len),
+            Some(1)
+        );
+
+        let apply =
+            groups.iter().find(|group| {
+                group.name() == "apply"
+            });
+
+        assert_eq!(
+            apply.map(CandidateGroup::len),
+            Some(1)
+        );
     }
 }
