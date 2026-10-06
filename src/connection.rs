@@ -1,4 +1,4 @@
-use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry};
+use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry, DynamicPrimitive};
 use crate::types::{Grid};
 
 #[derive(Debug, Clone)]
@@ -88,19 +88,27 @@ impl Dataset {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub enum Connection {
-    Primitive {
-        primitive: &'static PrimitiveEntry,
-        inputs: Vec<Box<Connection>>,
+    Input {
+        name: String,
+        ty: Type,
     },
+
     Constant {
         name: String,
         value: Value,
     },
-    Input {
-        name: String,
-        ty: Type,
+
+    Primitive {
+        primitive: &'static PrimitiveEntry,
+        inputs: Vec<Box<Connection>>,
+    },
+
+    Dynamic {
+        primitive: DynamicPrimitive,
+        inputs: Vec<Box<Connection>>,
+        output: Type,
     },
 }
 
@@ -135,6 +143,100 @@ impl Connection {
             primitive,
             inputs,
         })
+    }
+
+    pub fn output_type_with(
+        &self,
+        function_types: &mut crate::registry::FunctionTypeRegistry,
+    ) -> Type {
+        match self {
+            Connection::Input { ty, .. } => *ty,
+
+            Connection::Constant { value, .. } => {
+                value.output_type_with(function_types)
+            }
+
+            Connection::Primitive { primitive, .. } => {
+                primitive.output
+            }
+
+            Connection::Dynamic { output, .. } => *output,
+        }
+    }
+
+    pub fn dynamic(
+        primitive: DynamicPrimitive,
+        inputs: Vec<Box<Connection>>,
+        output: Type,
+    ) -> Self {
+        Self::Dynamic {
+            primitive,
+            inputs,
+            output,
+        }
+    }
+
+    pub fn apply(
+        function: Connection,
+        arguments: Vec<Connection>,
+        function_types: &mut crate::registry::FunctionTypeRegistry,
+    ) -> Result<Self, String> {
+        let function_type =
+            function.output_type_with(function_types);
+
+        let argument_types = arguments
+            .iter()
+            .map(|argument| {
+                argument.output_type_with(function_types)
+            })
+            .collect::<Vec<_>>();
+
+        let output = function_types.apply_type(
+            function_type,
+            &argument_types,
+        )?;
+
+        let mut inputs = Vec::with_capacity(
+            1 + arguments.len()
+        );
+
+        inputs.push(Box::new(function));
+
+        inputs.extend(
+            arguments.into_iter().map(Box::new)
+        );
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Apply,
+            inputs,
+            output,
+        ))
+    }
+
+    pub fn lbind(
+        function: Connection,
+        fixed: Connection,
+        function_types: &mut crate::registry::FunctionTypeRegistry,
+    ) -> Result<Self, String> {
+        let function_type =
+            function.output_type_with(function_types);
+
+        let fixed_type =
+            fixed.output_type_with(function_types);
+
+        let output = function_types.lbind_type(
+            function_type,
+            fixed_type,
+        )?;
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Lbind,
+            vec![
+                Box::new(function),
+                Box::new(fixed),
+            ],
+            output,
+        ))
     }
 
     pub fn output_with_inputs(
@@ -179,6 +281,52 @@ impl Connection {
 
                 (primitive.apply)(&values)
             }
+            
+            Connection::Dynamic {
+                primitive,
+                inputs,
+                ..
+            } => {
+                let mut values = Vec::with_capacity(inputs.len());
+
+                for input in inputs {
+                    values.push(
+                        input.output_with_inputs(environment)?
+                    );
+                }
+
+                match primitive {
+                    DynamicPrimitive::Lbind => {
+                        if values.len() != 2 {
+                            return Err(format!(
+                                "lbind expects 2 arguments, got {}",
+                                values.len()
+                            ));
+                        }
+
+                        crate::registry::lbind_value(
+                            &values[0],
+                            &values[1],
+                        )
+                    }
+
+                    DynamicPrimitive::Apply => {
+                        if values.is_empty() {
+                            return Err(
+                                "apply expects a function".to_string()
+                            );
+                        }
+
+                        let function = &values[0];
+                        let arguments = values[1..].to_vec();
+
+                        crate::registry::apply_values(
+                            function,
+                            arguments,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -189,6 +337,10 @@ impl Connection {
             Connection::Constant { name: _, value: _} => false,
 
             Connection::Primitive { inputs, .. } => {
+                inputs.iter().any(|input| input.is_open())
+            }
+
+            Connection::Dynamic { inputs, .. } => {
                 inputs.iter().any(|input| input.is_open())
             }
         }
@@ -237,6 +389,7 @@ impl Connection {
             Connection::Input { ty, .. } => {
                 *ty
             }
+            Connection::Dynamic { output, .. } => *output,
         }
     }
 
@@ -266,6 +419,11 @@ impl Connection {
 
                 (primitive.apply)(&values)
             }
+
+            Connection::Dynamic { .. } => {
+                let environment = InputEnvironment::new();
+                self.output_with_inputs(&environment)
+            }
         }
     }
 
@@ -287,6 +445,25 @@ impl Connection {
                     .join(", ");
 
                 format!("{}({})", primitive.name, args)
+            }
+
+            Connection::Dynamic {
+                primitive,
+                inputs,
+                ..
+            } => {
+                let name = primitive.name();
+
+                let arguments = inputs
+                    .iter()
+                    .map(|input| input.expression())
+                    .collect::<Vec<_>>();
+
+                format!(
+                    "{}({})",
+                    name,
+                    arguments.join(", ")
+                )
             }
         }
     }
@@ -332,6 +509,30 @@ impl Connection {
                     inputs,
                 )
                 .expect("substitution must preserve primitive signature")
+            }
+
+            Connection::Dynamic {
+                primitive,
+                inputs,
+                output,
+            } => {
+                let inputs = inputs
+                    .iter()
+                    .map(|input| {
+                        Box::new(
+                            input.substitute_input(
+                                name,
+                                replacement,
+                            )
+                        )
+                    })
+                    .collect();
+
+                Connection::Dynamic {
+                    primitive: *primitive,
+                    inputs,
+                    output: *output,
+                }
             }
         }
     }
@@ -421,11 +622,15 @@ mod tests {
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let depth_1 = generate(
             Type::Integer,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let depth_2 = generate(
@@ -433,6 +638,7 @@ mod tests {
             2,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert_eq!(depth_1.len(), 36);
@@ -549,11 +755,15 @@ mod tests {
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Grid,
             4,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let programs: Vec<_> = programs
@@ -595,11 +805,15 @@ mod tests {
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Grid,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let expressions: Vec<String> = programs
@@ -644,11 +858,15 @@ mod tests {
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = crate::search::generate(
             Type::Grid,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert!(!closed.is_open());
@@ -917,11 +1135,15 @@ mod tests {
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Grid,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert_eq!(programs.len(), 12);
@@ -1369,6 +1591,423 @@ mod tests {
         assert_eq!(
             substituted.expression(),
             "add(TWO, TWO)"
+        );
+    }
+
+    #[test]
+    fn lbind_connection_has_bound_function_type() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::lbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        let expected = function_types
+            .lbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            bound.output_type(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn lbind_connection_has_symbolic_expression() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::lbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        assert_eq!(
+            bound.expression(),
+            "lbind(Function, 10)"
+        );
+    }
+
+    #[test]
+    fn lbind_connection_evaluates_to_function() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(10),
+        );
+
+        let bound = Connection::lbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .unwrap();
+
+        let value = bound.output().unwrap();
+
+        match value {
+            Value::Function(function) => {
+                assert_eq!(function.inputs.len(), 1);
+                assert_eq!(
+                    function.inputs[0].ty,
+                    Type::Integer
+                );
+                assert_eq!(
+                    function.body.output_type(),
+                    Type::Integer
+                );
+
+                match function.body {
+                    Connection::Constant { value, .. } => {
+                        match value {
+                            Value::Integer(value) => {
+                                assert_eq!(value, 10);
+                            }
+                            other => {
+                                panic!(
+                                    "expected integer constant, got {:?}",
+                                    other
+                                );
+                            }
+                        }
+                    }
+
+                    other => {
+                        panic!(
+                            "expected constant body, got {:?}",
+                            other
+                        );
+                    }
+                }
+            }
+
+            other => {
+                panic!(
+                    "expected Function, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lbind_result_can_be_lbound_again() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let first = Connection::lbind(
+            function,
+            Connection::terminal(Value::Integer(10)),
+            &mut function_types,
+        )
+        .unwrap();
+
+        let second = Connection::lbind(
+            first,
+            Connection::terminal(Value::Integer(20)),
+            &mut function_types,
+        )
+        .unwrap();
+
+        match second.output().unwrap() {
+            Value::Function(function) => {
+                assert!(function.inputs.is_empty());
+            }
+
+            other => {
+                panic!(
+                    "expected Function, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn apply_connection_has_function_output_type() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let applied = Connection::apply(
+            function,
+            vec![
+                Connection::terminal(Value::Integer(10)),
+                Connection::terminal(Value::Integer(20)),
+            ],
+            &mut function_types,
+        )
+        .unwrap();
+
+        assert_eq!(
+            applied.output_type(),
+            Type::Integer,
+        );
+    }
+
+    #[test]
+    fn apply_connection_has_symbolic_expression() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let applied = Connection::apply(
+            function,
+            vec![
+                Connection::terminal(Value::Integer(10)),
+                Connection::terminal(Value::Integer(20)),
+            ],
+            &mut function_types,
+        )
+        .unwrap();
+
+        assert_eq!(
+            applied.expression(),
+            "apply(Function, 10, 20)"
+        );
+    }
+
+    #[test]
+    fn apply_connection_evaluates() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+                crate::signature::InputSpec {
+                    name: "Y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let applied = Connection::apply(
+            function,
+            vec![
+                Connection::terminal(Value::Integer(10)),
+                Connection::terminal(Value::Integer(20)),
+            ],
+            &mut function_types,
+        )
+        .unwrap();
+
+        match applied.output().unwrap() {
+            Value::Integer(value) => {
+                assert_eq!(value, 10);
+            }
+
+            other => {
+                panic!(
+                    "expected Integer, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn substitute_input_traverses_dynamic_connection() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = crate::function::Function::new(
+            vec![
+                crate::signature::InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let function = Connection::terminal(
+            Value::Function(Box::new(function)),
+        );
+
+        let applied = Connection::apply(
+            function,
+            vec![
+                Connection::input(
+                    "Y".to_string(),
+                    Type::Integer,
+                ),
+            ],
+            &mut function_types,
+        )
+        .unwrap();
+
+        let replaced = applied.substitute_input(
+            "Y",
+            &Connection::terminal(
+                Value::Integer(42),
+            ),
+        );
+
+        assert_eq!(
+            replaced.expression(),
+            "apply(Function, 42)"
         );
     }
 }
