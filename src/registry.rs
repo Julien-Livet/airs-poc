@@ -9,12 +9,14 @@ use crate::function::Function;
 pub enum DynamicPrimitive {
     Lbind,
     Apply,
+    Rbind,
 }
 
 impl DynamicPrimitive {
     pub fn name(self) -> &'static str {
         match self {
             DynamicPrimitive::Lbind => "lbind",
+            DynamicPrimitive::Rbind => "rbind",
             DynamicPrimitive::Apply => "apply",
         }
     }
@@ -46,6 +48,28 @@ pub fn lbind_value(
 
     Ok(Value::Function(Box::new(
         function.lbind(fixed)?,
+    )))
+}
+
+pub fn rbind_value(
+    function: &Value,
+    fixed: &Value,
+) -> Result<Value, String> {
+    let function = match function {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "rbind expects a Function".to_string()
+            );
+        }
+    };
+
+    let fixed = Connection::terminal(
+        fixed.clone(),
+    );
+
+    Ok(Value::Function(Box::new(
+        function.rbind(fixed)?,
     )))
 }
 
@@ -179,6 +203,50 @@ impl FunctionTypeRegistry {
             let remaining = &function.inputs[1..];
 
             (remaining.to_vec(), function.output)
+        };
+
+        Ok(self.type_of(&remaining, output))
+    }
+
+    pub fn rbind_type(
+        &mut self,
+        function_type: Type,
+        fixed_type: Type,
+    ) -> Result<Type, String> {
+        let id = match function_type {
+            Type::Function(id) => id,
+            other => {
+                return Err(format!(
+                    "rbind expects a function, got {:?}",
+                    other
+                ));
+            }
+        };
+
+        let (remaining, output) = {
+            let function = self
+                .get(id)
+                .ok_or_else(|| "unknown function type".to_string())?;
+
+            if function.inputs.is_empty() {
+                return Err(
+                    "cannot rbind a function with no inputs".to_string()
+                );
+            }
+
+            let last = function.inputs.len() - 1;
+
+            if function.inputs[last] != fixed_type {
+                return Err(format!(
+                    "rbind type mismatch: expected {:?}, got {:?}",
+                    function.inputs[last],
+                    fixed_type
+                ));
+            }
+
+            let remaining = function.inputs[..last].to_vec();
+
+            (remaining, function.output)
         };
 
         Ok(self.type_of(&remaining, output))
@@ -1032,22 +1100,22 @@ mod tests
         );
     }
 
-    #[test]
-    fn lbind_type_rejects_wrong_fixed_type() {
-        let mut registry = FunctionTypeRegistry::new();
+        #[test]
+        fn lbind_type_rejects_wrong_fixed_type() {
+            let mut registry = FunctionTypeRegistry::new();
 
-        let function_type = registry.type_of(
-            &[Type::Integer, Type::Integer],
-            Type::Integer,
-        );
+            let function_type = registry.type_of(
+                &[Type::Integer, Type::Integer],
+                Type::Integer,
+            );
 
-        let result = registry.lbind_type(
-            function_type,
-            Type::Boolean,
-        );
+            let result = registry.lbind_type(
+                function_type,
+                Type::Boolean,
+            );
 
-        assert!(result.is_err());
-    }
+            assert!(result.is_err());
+        }
 
     #[test]
     fn apply_type_returns_function_output() {
@@ -2469,5 +2537,51 @@ mod tests
             crate::primitives::add_entry.output,
             Type::Integer
         );
+    }
+
+    #[test]
+    fn rbind_type_removes_last_argument() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry
+            .rbind_type(
+                function_type,
+                Type::Integer,
+            )
+            .expect("rbind type must succeed");
+
+        let result_type = registry
+            .function_type(result)
+            .expect("result must be a function type");
+
+        assert_eq!(
+            result_type,
+            &FunctionType {
+                inputs: vec![Type::Integer],
+                output: Type::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn rbind_type_rejects_wrong_fixed_type() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let function_type = registry.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let result = registry.rbind_type(
+            function_type,
+            Type::Boolean,
+        );
+
+        assert!(result.is_err());
     }
 }
