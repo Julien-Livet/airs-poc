@@ -44,12 +44,16 @@ fn main() {
         },
     ];
 
+    let mut function_types =
+        crate::registry::FunctionTypeRegistry::new();
+
     for depth in 0..=4 {
         let programs = generate(
             registry::Type::Grid,
             depth,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         println!(
@@ -66,6 +70,7 @@ fn main() {
         4,
         &terminals,
         &inputs,
+        &mut function_types,
     );
 
     let mut classes: BTreeMap<Vec<Vec<Vec<i16>>>, Vec<String>> = BTreeMap::new();
