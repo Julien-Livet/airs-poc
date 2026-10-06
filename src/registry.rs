@@ -1,7 +1,6 @@
 use linkme::distributed_slice;
 use std::collections::HashMap;
 
-use crate::primitives;
 use crate::connection::Connection;
 use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
 use crate::function::Function;
@@ -303,91 +302,6 @@ impl HasType for Boolean {
     const TYPE: Type = Type::Boolean;
 }
 
-macro_rules! register_primitive {
-    (
-        $static_name:ident,
-        $entry:expr
-    ) => {
-        #[distributed_slice(PRIMITIVES)]
-        static $static_name: PrimitiveEntry = $entry;
-    };
-}
-
-macro_rules! register_unary_primitive {
-    (
-        $static_name:ident,
-        $wrapper_name:ident,
-        $name:expr,
-        $function:path
-    ) => {
-        fn $wrapper_name(
-            args: &[Value],
-        ) -> Result<Value, String> {
-            call_unary(args, $function)
-        }
-
-        register_primitive!(
-            $static_name,
-            PrimitiveEntry::from_descriptor(
-                unary_descriptor($name, $function),
-                $wrapper_name,
-            )
-        );
-    };
-}
-
-macro_rules! register_binary_primitive {
-    (
-        $static_name:ident,
-        $wrapper_name:ident,
-        $name:expr,
-        $function:path
-    ) => {
-        fn $wrapper_name(
-            args: &[Value],
-        ) -> Result<Value, String> {
-            call_binary(args, $function)
-        }
-
-        register_primitive!(
-            $static_name,
-            PrimitiveEntry::from_descriptor(
-                binary_descriptor($name, $function),
-                $wrapper_name,
-            )
-        );
-    };
-}
-
-macro_rules! register_ternary_primitive {
-    (
-        $static_name:ident,
-        $wrapper_name:ident,
-        $name:expr,
-        $function:path
-    ) => {
-        fn $wrapper_name(
-            args: &[Value],
-        ) -> Result<Value, String> {
-            call_ternary(args, $function)
-        }
-
-        register_primitive!(
-            $static_name,
-            PrimitiveEntry::from_descriptor(
-                ternary_descriptor($name, $function),
-                $wrapper_name,
-            )
-        );
-    };
-}
-
-pub struct PrimitiveDescriptor {
-    pub name: &'static str,
-    pub inputs: &'static [Type],
-    pub output: Type,
-}
-
 pub trait FromValue: Sized {
     fn from_value(value: &Value) -> Result<Self, String>;
 }
@@ -498,54 +412,6 @@ impl FromValue for Function {
 impl IntoValue for Function {
     fn into_value(self) -> Value {
         Value::Function(Box::new(self))
-    }
-}
-
-pub const fn unary_descriptor<A, R>(
-    name: &'static str,
-    _function: fn(A) -> R,
-) -> PrimitiveDescriptor
-where
-    A: HasType,
-    R: HasType,
-{
-    PrimitiveDescriptor {
-        name,
-        inputs: &[A::TYPE],
-        output: R::TYPE,
-    }
-}
-
-pub const fn binary_descriptor<A, B, R>(
-    name: &'static str,
-    _function: fn(A, B) -> R,
-) -> PrimitiveDescriptor
-where
-    A: HasType,
-    B: HasType,
-    R: HasType,
-{
-    PrimitiveDescriptor {
-        name,
-        inputs: &[A::TYPE, B::TYPE],
-        output: R::TYPE,
-    }
-}
-
-pub const fn ternary_descriptor<A, B, C, R>(
-    name: &'static str,
-    _function: fn(A, B, C) -> R,
-) -> PrimitiveDescriptor
-where
-    A: HasType,
-    B: HasType,
-    C: HasType,
-    R: HasType,
-{
-    PrimitiveDescriptor {
-        name,
-        inputs: &[A::TYPE, B::TYPE, C::TYPE],
-        output: R::TYPE,
     }
 }
 
@@ -669,18 +535,6 @@ impl PrimitiveEntry {
         }
     }
 
-    pub const fn from_descriptor(
-        descriptor: PrimitiveDescriptor,
-        apply: fn(&[Value]) -> Result<Value, String>,
-    ) -> Self {
-        Self::new(
-            descriptor.name,
-            descriptor.inputs,
-            descriptor.output,
-            apply,
-        )
-    }
-
     pub fn accepts(&self, inputs: &[Type]) -> bool {
         self.inputs == inputs
     }
@@ -712,289 +566,14 @@ pub fn find_by_name_and_inputs(
         })
 }
 
-register_binary_primitive!(
-    ADD,
-    add_dyn_generated,
-    "add",
-    primitives::add
-);
-
-register_binary_primitive!(
-    ADD_TUPLE_TUPLE,
-    add_tuple_tuple_dyn_generated,
-    "add",
-    primitives::add_tuple_tuple
-);
-
-register_binary_primitive!(
-    ADD_INTEGER_TUPLE,
-    add_integer_tuple_dyn_generated,
-    "add",
-    primitives::add_integer_tuple
-);
-
-register_binary_primitive!(
-    ADD_TUPLE_INTEGER,
-    add_tuple_integer_dyn_generated,
-    "add",
-    primitives::add_tuple_integer
-);
-
-register_binary_primitive!(
-    SUBTRACT,
-    subtract_dyn_generated,
-    "subtract",
-    primitives::subtract
-);
-
-register_binary_primitive!(
-    SUBTRACT_TUPLE_TUPLE,
-    subtract_tuple_tuple_dyn_generated,
-    "subtract",
-    primitives::subtract_tuple_tuple
-);
-
-register_binary_primitive!(
-    SUBTRACT_INTEGER_TUPLE,
-    subtract_integer_tuple_dyn_generated,
-    "subtract",
-    primitives::subtract_integer_tuple
-);
-
-register_binary_primitive!(
-    SUBTRACT_TUPLE_INTEGER,
-    subtract_tuple_integer_dyn_generated,
-    "subtract",
-    primitives::subtract_tuple_integer
-);
-
-register_binary_primitive!(
-    MULTIPLY,
-    multiply_dyn_generated,
-    "multiply",
-    primitives::multiply
-);
-
-register_binary_primitive!(
-    MULTIPLY_TUPLE_TUPLE,
-    multiply_tuple_tuple_dyn_generated,
-    "multiply",
-    primitives::multiply_tuple_tuple
-);
-
-register_binary_primitive!(
-    MULTIPLY_INTEGER_TUPLE,
-    multiply_integer_tuple_dyn_generated,
-    "multiply",
-    primitives::multiply_integer_tuple
-);
-
-register_binary_primitive!(
-    MULTIPLY_TUPLE_INTEGER,
-    multiply_tuple_integer_dyn_generated,
-    "multiply",
-    primitives::multiply_tuple_integer
-);
-
-register_binary_primitive!(
-    DIVIDE,
-    divide_dyn_generated,
-    "divide",
-    primitives::divide
-);
-
-register_binary_primitive!(
-    DIVIDE_TUPLE_TUPLE,
-    divide_tuple_tuple_dyn_generated,
-    "divide",
-    primitives::divide_tuple_tuple
-);
-
-register_binary_primitive!(
-    DIVIDE_INTEGER_TUPLE,
-    divide_integer_tuple_dyn_generated,
-    "divide",
-    primitives::divide_integer_tuple
-);
-
-register_binary_primitive!(
-    DIVIDE_TUPLE_INTEGER,
-    divide_tuple_integer_dyn_generated,
-    "divide",
-    primitives::divide_tuple_integer
-);
-
-register_unary_primitive!(
-    FLIP,
-    flip_dyn_generated,
-    "flip",
-    primitives::flip
-);
-
-register_unary_primitive!(
-    HMIRROR,
-    hmirror_dyn_generated,
-    "hmirror",
-    primitives::hmirror
-);
-
-register_unary_primitive!(
-    HMIRROR_OBJECT,
-    hmirror_object_dyn_generated,
-    "hmirror",
-    primitives::hmirror_object
-);
-
-register_unary_primitive!(
-    HMIRROR_INDICES,
-    hmirror_indices_dyn_generated,
-    "hmirror",
-    primitives::hmirror_indices
-);
-
-register_unary_primitive!(
-    VMIRROR,
-    vmirror_dyn_generated,
-    "vmirror",
-    primitives::vmirror
-);
-
-register_unary_primitive!(
-    VMIRROR_OBJECT,
-    vmirror_object_dyn_generated,
-    "vmirror",
-    primitives::vmirror_object
-);
-
-register_unary_primitive!(
-    VMIRROR_INDICES,
-    vmirror_indices_dyn_generated,
-    "vmirror",
-    primitives::vmirror_indices
-);
-
-register_unary_primitive!(
-    DMIRROR,
-    dmirror_dyn_generated,
-    "dmirror",
-    primitives::dmirror
-);
-
-register_unary_primitive!(
-    DMIRROR_OBJECT,
-    dmirror_object_dyn_generated,
-    "dmirror",
-    primitives::dmirror_object
-);
-
-register_unary_primitive!(
-    DMIRROR_INDICES,
-    dmirror_indices_dyn_generated,
-    "dmirror",
-    primitives::dmirror_indices
-);
-
-register_unary_primitive!(
-    CMIRROR,
-    cmirror_dyn_generated,
-    "cmirror",
-    primitives::cmirror
-);
-
-register_unary_primitive!(
-    CMIRROR_OBJECT,
-    cmirror_object_dyn_generated,
-    "cmirror",
-    primitives::cmirror_object
-);
-
-register_unary_primitive!(
-    CMIRROR_INDICES,
-    cmirror_indices_dyn_generated,
-    "cmirror",
-    primitives::cmirror_indices
-);
-
-register_binary_primitive!(
-    VCONCAT,
-    vconcat_dyn_generated,
-    "vconcat",
-    primitives::vconcat
-);
-
-register_unary_primitive!(
-    ULCORNER,
-    ulcorner_dyn_generated,
-    "ulcorner",
-    primitives::ulcorner
-);
-
-register_unary_primitive!(
-    URCORNER,
-    urcorner_dyn_generated,
-    "urcorner",
-    primitives::urcorner
-);
-
-register_unary_primitive!(
-    LLCORNER,
-    llcorner_dyn_generated,
-    "llcorner",
-    primitives::llcorner
-);
-
-register_unary_primitive!(
-    LRCORNER,
-    lrcorner_dyn_generated,
-    "lrcorner",
-    primitives::lrcorner
-);
-
-register_ternary_primitive!(
-    CROP,
-    crop_dyn_generated,
-    "crop",
-    primitives::crop
-);
-
 #[cfg(test)]
 mod tests
 {
     use super::*;
-    use crate::{primitives, registry::hmirror_dyn_generated};
+    use crate::{primitives};
     use crate::connection::Connection;
     use crate::signature::InputSpec;
     use crate::function::Function;
-
-    #[test]
-    fn unary_descriptor_infers_types() {
-        let descriptor = unary_descriptor(
-            "hmirror",
-            primitives::hmirror,
-        );
-
-        assert_eq!(descriptor.name, "hmirror");
-        assert_eq!(descriptor.inputs, &[Type::Grid]);
-        assert_eq!(descriptor.output, Type::Grid);
-    }
-
-    #[test]
-    fn binary_descriptor_infers_types() {
-        let descriptor = binary_descriptor(
-            "vconcat",
-            primitives::vconcat,
-        );
-
-        assert_eq!(descriptor.name, "vconcat");
-        assert_eq!(
-            descriptor.inputs,
-            &[Type::Grid, Type::Grid],
-        );
-        assert_eq!(
-            descriptor.output,
-            Type::Grid,
-        );
-    }
 
     #[test]
     fn unary_call_adapter_can_be_generated_from_function() {
@@ -1014,25 +593,8 @@ mod tests
     }
 
     #[test]
-    fn primitive_entry_can_be_built_from_descriptor() {
-        let descriptor = unary_descriptor(
-            "hmirror",
-            primitives::hmirror,
-        );
-
-        let entry = PrimitiveEntry::from_descriptor(
-            descriptor,
-            hmirror_dyn_generated,
-        );
-
-        assert_eq!(entry.name, "hmirror");
-        assert_eq!(entry.inputs, &[Type::Grid]);
-        assert_eq!(entry.output, Type::Grid);
-    }
-
-    #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 35);
+        assert_eq!(PRIMITIVES.len(), 36);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -1161,21 +723,6 @@ mod tests
             result,
             Value::IntegerTuple((2, 1))
         ));
-    }
-
-    #[test]
-    fn ternary_descriptor_infers_types() {
-        let descriptor = ternary_descriptor(
-            "crop",
-            primitives::crop,
-        );
-
-        assert_eq!(descriptor.name, "crop");
-        assert_eq!(
-            descriptor.inputs,
-            &[Type::Grid, Type::IntegerTuple, Type::IntegerTuple]
-        );
-        assert_eq!(descriptor.output, Type::Grid);
     }
 
     #[test]
@@ -2908,6 +2455,19 @@ mod tests
         assert_eq!(
             registry.output(id),
             Some(Type::Object),
+        );
+    }
+
+    #[test]
+    fn primitive_macro_generates_entry() {
+        assert_eq!(crate::primitives::add_entry.name, "add");
+        assert_eq!(
+            crate::primitives::add_entry.inputs,
+            &[Type::Integer, Type::Integer]
+        );
+        assert_eq!(
+            crate::primitives::add_entry.output,
+            Type::Integer
         );
     }
 }
