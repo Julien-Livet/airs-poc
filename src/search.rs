@@ -6,6 +6,111 @@ use crate::signature::InputSpec;
 use std::collections::BTreeMap;
 use rand::seq::SliceRandom;
 
+fn shuffle_candidate_groups(
+    groups: &mut [CandidateGroup],
+    rng: &mut impl rand::Rng,
+) {
+    groups.shuffle(rng);
+
+    for group in groups {
+        match group {
+            CandidateGroup::Dynamic {
+                candidates, ..
+            } => {
+                candidates.shuffle(rng);
+            }
+
+            CandidateGroup::Primitive {
+                candidates, ..
+            } => {
+                candidates.shuffle(rng);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum CandidateGroup {
+    Dynamic {
+        name: &'static str,
+        candidates: Vec<DynamicCandidate>,
+    },
+    Primitive {
+        name: &'static str,
+        candidates: Vec<&'static PrimitiveEntry>,
+    },
+}
+
+fn candidate_groups(
+    output_type: Type,
+    function_types: &FunctionTypeRegistry,
+) -> Vec<CandidateGroup> {
+    let mut groups = Vec::new();
+
+    let mut lbind =
+        lbind_candidates(
+            output_type,
+            function_types,
+        );
+
+    if !lbind.is_empty() {
+        groups.push(CandidateGroup::Dynamic {
+            name: "lbind",
+            candidates: lbind
+                .drain(..)
+                .map(|(id, ty)| {
+                    DynamicCandidate::Lbind(id, ty)
+                })
+                .collect(),
+        });
+    }
+
+    let mut rbind =
+        rbind_candidates(
+            output_type,
+            function_types,
+        );
+
+    if !rbind.is_empty() {
+        groups.push(CandidateGroup::Dynamic {
+            name: "rbind",
+            candidates: rbind
+                .drain(..)
+                .map(|(id, ty)| {
+                    DynamicCandidate::Rbind(id, ty)
+                })
+                .collect(),
+        });
+    }
+
+    let mut apply =
+        apply_candidates(
+            output_type,
+            function_types,
+        );
+
+    if !apply.is_empty() {
+        groups.push(CandidateGroup::Dynamic {
+            name: "apply",
+            candidates: apply
+                .drain(..)
+                .map(DynamicCandidate::Apply)
+                .collect(),
+        });
+    }
+
+    for group in primitive_candidates_by_name(output_type) {
+        let (name, candidates) = group;
+
+        groups.push(CandidateGroup::Primitive {
+            name,
+            candidates,
+        });
+    }
+
+    groups
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DynamicCandidate {
     Lbind(FunctionTypeId, Type),
@@ -166,6 +271,128 @@ fn lbind_candidates(
         .collect()
 }
 
+fn try_dynamic_candidate(
+    candidate: DynamicCandidate,
+    depth: usize,
+    inputs: &[InputSpec],
+    function_types: &mut FunctionTypeRegistry,
+    rng: &mut impl rand::Rng,
+) -> Option<Connection> {
+    match candidate {
+        DynamicCandidate::Lbind(
+            source_id,
+            fixed_type,
+        ) => {
+            let source_type =
+                Type::Function(source_id);
+
+            let function =
+                build_connection(
+                    source_type,
+                    depth - 1,
+                    inputs,
+                    function_types,
+                    rng,
+                )
+                .ok()?;
+
+            let fixed =
+                build_connection(
+                    fixed_type,
+                    depth - 1,
+                    inputs,
+                    function_types,
+                    rng,
+                )
+                .ok()?;
+
+            Connection::lbind(
+                function,
+                fixed,
+                function_types,
+            )
+            .ok()
+        }
+
+        DynamicCandidate::Rbind(
+            source_id,
+            fixed_type,
+        ) => {
+            let source_type =
+                Type::Function(source_id);
+
+            let function =
+                build_connection(
+                    source_type,
+                    depth - 1,
+                    inputs,
+                    function_types,
+                    rng,
+                )
+                .ok()?;
+
+            let fixed =
+                build_connection(
+                    fixed_type,
+                    depth - 1,
+                    inputs,
+                    function_types,
+                    rng,
+                )
+                .ok()?;
+
+            Connection::rbind(
+                function,
+                fixed,
+                function_types,
+            )
+            .ok()
+        }
+
+        DynamicCandidate::Apply(function_id) => {
+            let function_type =
+                Type::Function(function_id);
+
+            let function =
+                build_connection(
+                    function_type,
+                    depth - 1,
+                    inputs,
+                    function_types,
+                    rng,
+                )
+                .ok()?;
+
+            let argument_types =
+                function_types
+                    .inputs(function_id)?
+                    .to_vec();
+
+            let arguments =
+                argument_types
+                    .iter()
+                    .map(|argument_type| {
+                        build_connection(
+                            *argument_type,
+                            depth - 1,
+                            inputs,
+                            function_types,
+                            rng,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .ok()?;
+
+            Connection::apply(
+                function,
+                arguments,
+                function_types,
+            )
+            .ok()
+        }
+    }
+}
+
 fn build_connection(
     output_type: Type,
     depth: usize,
@@ -183,185 +410,71 @@ fn build_connection(
             });
     }
 
-    for candidate in
-        dynamic_candidates(output_type, function_types, rng)
-    {
-        match candidate {
-            DynamicCandidate::Lbind(
-                source_id,
-                fixed_type,
-            ) => {
-                let source_type =
-                    Type::Function(source_id);
+    let mut groups =
+        candidate_groups(
+            output_type,
+            function_types,
+        );
 
-                let Ok(function) =
-                    build_connection(
-                        source_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                else {
-                    continue;
-                };
+    shuffle_candidate_groups(
+        &mut groups,
+        rng,
+    );
 
-                let Ok(fixed) =
-                    build_connection(
-                        fixed_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                else {
-                    continue;
-                };
-
-                if let Ok(connection) =
-                    Connection::lbind(
-                        function,
-                        fixed,
-                        function_types,
-                    )
-                {
-                    return Ok(connection);
+    for group in groups {
+        match group {
+            CandidateGroup::Dynamic {
+                candidates,
+                ..
+            } => {
+                for candidate in candidates {
+                    if let Some(connection) =
+                        try_dynamic_candidate(
+                            candidate,
+                            depth,
+                            inputs,
+                            function_types,
+                            rng,
+                        )
+                    {
+                        return Ok(connection);
+                    }
                 }
             }
 
-            DynamicCandidate::Rbind(
-                source_id,
-                fixed_type,
-            ) => {
-                let source_type =
-                    Type::Function(source_id);
-
-                let Ok(function) =
-                    build_connection(
-                        source_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                else {
-                    continue;
-                };
-
-                let Ok(fixed) =
-                    build_connection(
-                        fixed_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                else {
-                    continue;
-                };
-
-                if let Ok(connection) =
-                    Connection::rbind(
-                        function,
-                        fixed,
-                        function_types,
-                    )
-                {
-                    return Ok(connection);
-                }
-            }
-
-            DynamicCandidate::Apply(function_id) => {
-                let function_type =
-                    Type::Function(function_id);
-
-                let Ok(function) =
-                    build_connection(
-                        function_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                else {
-                    continue;
-                };
-
-                let Some(argument_types) =
-                    function_types.inputs(function_id)
-                else {
-                    continue;
-                };
-
-                let argument_types =
-                    argument_types.to_vec();
-
-                let arguments =
-                    argument_types
+            CandidateGroup::Primitive {
+                candidates,
+                ..
+            } => {
+                for primitive in candidates {
+                    let inputs = primitive
+                        .inputs
                         .iter()
-                        .map(|argument_type| {
+                        .map(|input_type| {
                             build_connection(
-                                *argument_type,
+                                *input_type,
                                 depth - 1,
                                 inputs,
                                 function_types,
                                 rng,
                             )
-                            .map_err(|_| ())
+                            .map(Box::new)
                         })
                         .collect::<Result<Vec<_>, _>>();
 
-                let Ok(arguments) = arguments
-                else {
-                    continue;
-                };
+                    let Ok(inputs) = inputs else {
+                        continue;
+                    };
 
-                if let Ok(connection) =
-                    Connection::apply(
-                        function,
-                        arguments,
-                        function_types,
-                    )
-                {
-                    return Ok(connection);
+                    if let Ok(connection) =
+                        Connection::new(
+                            primitive,
+                            inputs,
+                        )
+                    {
+                        return Ok(connection);
+                    }
                 }
-            }
-        }
-    }
-
-    let mut groups =
-        shuffled_primitive_groups(output_type, rng);
-
-    shuffle_primitive_overloads(
-        &mut groups,
-        rng,
-    );
-
-    for group in &groups {
-        for primitive in group {
-            let inputs = primitive
-                .inputs
-                .iter()
-                .map(|input_type| {
-                    build_connection(
-                        *input_type,
-                        depth - 1,
-                        inputs,
-                        function_types,
-                        rng,
-                    )
-                    .map(Box::new)
-                })
-                .collect::<Result<Vec<_>, _>>();
-
-            let Ok(inputs) = inputs else {
-                continue;
-            };
-
-            if let Ok(connection) =
-                Connection::new(*primitive, inputs)
-            {
-                return Ok(connection);
             }
         }
     }
@@ -2675,14 +2788,6 @@ mod tests
         )
         .expect("expected apply connection");
 
-        assert!(matches!(
-            connection,
-            Connection::Dynamic {
-                primitive: DynamicPrimitive::Apply,
-                ..
-            }
-        ));
-
         assert_eq!(
             connection.output_type_with(&mut function_types),
             Type::Integer
@@ -2754,5 +2859,111 @@ mod tests
                     if *id == apply_source_id
             )
         }));
+    }
+
+    #[test]
+    fn candidate_groups_collect_dynamic_and_primitive_families() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let function_type =
+            function_types.type_of(
+                &[Type::Integer, Type::Integer],
+                Type::Integer,
+            );
+
+        let output_type =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let groups =
+            candidate_groups(
+                output_type,
+                &function_types,
+            );
+
+        assert!(groups.iter().any(|group| {
+            matches!(
+                group,
+                CandidateGroup::Dynamic {
+                    name: "lbind",
+                    ..
+                }
+            )
+        }));
+
+        assert!(groups.iter().any(|group| {
+            matches!(
+                group,
+                CandidateGroup::Dynamic {
+                    name: "rbind",
+                    ..
+                }
+            )
+        }));
+
+        let _ = function_type;
+    }
+
+    #[test]
+    fn shuffle_candidate_groups_preserves_candidates() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let output_type =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let mut groups =
+            candidate_groups(
+                output_type,
+                &function_types,
+            );
+
+        let before = groups
+            .iter()
+            .map(|group| match group {
+                CandidateGroup::Dynamic {
+                    candidates, ..
+                } => candidates.len(),
+
+                CandidateGroup::Primitive {
+                    candidates, ..
+                } => candidates.len(),
+            })
+            .collect::<Vec<_>>();
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(0);
+
+        shuffle_candidate_groups(
+            &mut groups,
+            &mut rng,
+        );
+
+        let after = groups
+            .iter()
+            .map(|group| match group {
+                CandidateGroup::Dynamic {
+                    candidates, ..
+                } => candidates.len(),
+
+                CandidateGroup::Primitive {
+                    candidates, ..
+                } => candidates.len(),
+            })
+            .collect::<Vec<_>>();
+
+        let mut before = before;
+        let mut after = after;
+
+        before.sort_unstable();
+        after.sort_unstable();
+
+        assert_eq!(before, after);
     }
 }
