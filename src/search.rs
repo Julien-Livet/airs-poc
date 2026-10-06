@@ -21,17 +21,13 @@ fn primitive_candidate_group(
 }
 
 fn dynamic_candidate_group(
-    name: &'static str,
     candidates: Vec<DynamicCandidate>,
 ) -> Option<CandidateGroup> {
     if candidates.is_empty() {
         return None;
     }
 
-    Some(CandidateGroup::Dynamic {
-        name,
-        candidates,
-    })
+    Some(CandidateGroup::Dynamic { candidates })
 }
 
 fn shuffle_candidate_groups(
@@ -60,7 +56,6 @@ fn shuffle_candidate_groups(
 #[derive(Debug)]
 enum CandidateGroup {
     Dynamic {
-        name: &'static str,
         candidates: Vec<DynamicCandidate>,
     },
     Primitive {
@@ -72,7 +67,7 @@ enum CandidateGroup {
 impl CandidateGroup {
     fn name(&self) -> &'static str {
         match self {
-            CandidateGroup::Dynamic { name, .. } => name,
+            CandidateGroup::Dynamic { candidates } => candidates[0].name(),
             CandidateGroup::Primitive { name, .. } => name,
         }
     }
@@ -100,7 +95,6 @@ fn candidate_groups(
 
     if let Some(group) =
         dynamic_candidate_group(
-            "lbind",
             lbind_candidates(
                 output_type,
                 function_types,
@@ -117,7 +111,6 @@ fn candidate_groups(
 
     if let Some(group) =
         dynamic_candidate_group(
-            "rbind",
             rbind_candidates(
                 output_type,
                 function_types,
@@ -134,7 +127,6 @@ fn candidate_groups(
 
     if let Some(group) =
         dynamic_candidate_group(
-            "apply",
             apply_candidates(
                 output_type,
                 function_types,
@@ -168,6 +160,16 @@ enum DynamicCandidate {
     Lbind(FunctionTypeId, Type),
     Rbind(FunctionTypeId, Type),
     Apply(FunctionTypeId),
+}
+
+impl DynamicCandidate {
+    fn name(&self) -> &'static str {
+        match self {
+            DynamicCandidate::Lbind(..) => "lbind",
+            DynamicCandidate::Rbind(..) => "rbind",
+            DynamicCandidate::Apply(..) => "apply",
+        }
+    }
 }
 
 fn apply_candidates(
@@ -2833,7 +2835,6 @@ mod tests
             matches!(
                 group,
                 CandidateGroup::Dynamic {
-                    name: "lbind",
                     ..
                 }
             )
@@ -2843,7 +2844,6 @@ mod tests
             matches!(
                 group,
                 CandidateGroup::Dynamic {
-                    name: "rbind",
                     ..
                 }
             )
@@ -2914,14 +2914,29 @@ mod tests
 
     #[test]
     fn candidate_group_has_family_name() {
-        let group =
-            CandidateGroup::Dynamic {
-                name: "lbind",
-                candidates: Vec::new(),
-            };
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let function_id = match source_type {
+            Type::Function(id) => id,
+            _ => unreachable!(),
+        };
+
+        let group = CandidateGroup::Dynamic {
+            candidates: vec![
+                DynamicCandidate::Lbind(
+                    function_id,
+                    Type::Integer,
+                ),
+            ],
+        };
 
         assert_eq!(group.name(), "lbind");
-        assert_eq!(group.len(), 0);
+        assert_eq!(group.len(), 1);
     }
 
     #[test]
