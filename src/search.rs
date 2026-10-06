@@ -1360,11 +1360,6 @@ mod tests
         let mut function_types =
             crate::registry::FunctionTypeRegistry::new();
 
-        let function_type = function_types.type_of(
-            &[Type::Integer],
-            Type::Integer,
-        );
-
         let function = Function::new(
             vec![
                 InputSpec {
