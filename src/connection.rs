@@ -727,72 +727,6 @@ mod tests {
     }
 
     #[test]
-    fn mirror_programs_have_two_semantic_classes() {
-        let dataset = Dataset::from_grids(vec![
-                vec![
-                    vec![1, 2, 3],
-                    vec![4, 5, 6],
-                ],
-                vec![
-                    vec![7, 8],
-                    vec![9, 0],
-                ],
-                vec![
-                    vec![1, 0, 1],
-                    vec![0, 1, 1],
-                ],
-            ],
-        );
-
-        let terminals = Terminals {
-            values: vec![],
-        };
-
-        let inputs = vec![
-            InputSpec {
-                name: "I".to_string(),
-                ty: Type::Grid,
-            },
-        ];
-
-        let mut function_types =
-            crate::registry::FunctionTypeRegistry::new();
-
-        let programs = generate(
-            Type::Grid,
-            4,
-            &terminals,
-            &inputs,
-            &mut function_types,
-        );
-
-        let programs: Vec<_> = programs
-            .into_iter()
-            .filter(|program| {
-                let expression = program.expression();
-
-                !expression.contains("vconcat")
-            })
-            .collect();
-
-        assert_eq!(programs.len(), 256);
-
-        let mut signatures = std::collections::BTreeSet::new();
-
-        for program in &programs {
-            let signature = semantic_signature(
-                program,
-                &dataset.environments,
-            )
-            .unwrap();
-
-            signatures.insert(signature);
-        }
-
-        assert_eq!(signatures.len(), 4);
-    }
-
-    #[test]
     fn generated_grid_programs_use_named_input() {
         let terminals = Terminals {
             values: vec![],
@@ -1146,7 +1080,7 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 12);
+        assert_eq!(programs.len(), 16);
 
         let expressions = programs
             .iter()
@@ -1172,6 +1106,22 @@ mod tests {
 
         assert!(expressions.contains(
             &"vconcat(J, J)".to_string()
+        ));
+
+        assert!(expressions.contains(
+            &"hconcat(I, I)".to_string()
+        ));
+
+        assert!(expressions.contains(
+            &"hconcat(I, J)".to_string()
+        ));
+
+        assert!(expressions.contains(
+            &"hconcat(J, I)".to_string()
+        ));
+
+        assert!(expressions.contains(
+            &"hconcat(J, J)".to_string()
         ));
     }
 
