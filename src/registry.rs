@@ -342,34 +342,6 @@ impl FunctionTypeRegistry {
     }
 }
 
-pub trait HasType {
-    const TYPE: Type;
-}
-
-impl HasType for Integer {
-    const TYPE: Type = Type::Integer;
-}
-
-impl HasType for Grid {
-    const TYPE: Type = Type::Grid;
-}
-
-impl HasType for IntegerTuple {
-    const TYPE: Type = Type::IntegerTuple;
-}
-
-impl HasType for Indices {
-    const TYPE: Type = Type::Indices;
-}
-
-impl HasType for Object {
-    const TYPE: Type = Type::Object;
-}
-
-impl HasType for Boolean {
-    const TYPE: Type = Type::Boolean;
-}
-
 pub trait FromValue: Sized {
     fn from_value(value: &Value) -> Result<Self, String>;
 }
@@ -483,72 +455,6 @@ impl IntoValue for Function {
     }
 }
 
-pub fn call_unary<A, R>(
-    args: &[Value],
-    function: fn(A) -> R,
-) -> Result<Value, String>
-where
-    A: FromValue,
-    R: IntoValue,
-{
-    if args.len() != 1 {
-        return Err(format!(
-            "expected 1 argument, got {}",
-            args.len()
-        ));
-    }
-
-    let a = A::from_value(&args[0])?;
-
-    Ok(function(a).into_value())
-}
-
-pub fn call_binary<A, B, R>(
-    args: &[Value],
-    function: fn(A, B) -> R,
-) -> Result<Value, String>
-where
-    A: FromValue,
-    B: FromValue,
-    R: IntoValue,
-{
-    if args.len() != 2 {
-        return Err(format!(
-            "expected 2 arguments, got {}",
-            args.len()
-        ));
-    }
-
-    let a = A::from_value(&args[0])?;
-    let b = B::from_value(&args[1])?;
-
-    Ok(function(a, b).into_value())
-}
-
-pub fn call_ternary<A, B, C, R>(
-    args: &[Value],
-    function: fn(A, B, C) -> R,
-) -> Result<Value, String>
-where
-    A: FromValue,
-    B: FromValue,
-    C: FromValue,
-    R: IntoValue,
-{
-    if args.len() != 3 {
-        return Err(format!(
-            "expected 3 arguments, got {}",
-            args.len()
-        ));
-    }
-
-    let a = A::from_value(&args[0])?;
-    let b = B::from_value(&args[1])?;
-    let c = C::from_value(&args[2])?;
-
-    Ok(function(a, b, c).into_value())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     pub inputs: Vec<Type>,
@@ -589,24 +495,11 @@ pub struct PrimitiveEntry {
 }
 
 impl PrimitiveEntry {
-    pub const fn new(
-        name: &'static str,
-        inputs: &'static [Type],
-        output: Type,
-        apply: fn(&[Value]) -> Result<Value, String>,
-    ) -> Self {
-        Self {
-            name,
-            inputs,
-            output,
-            apply,
-        }
-    }
-
     pub fn accepts(&self, inputs: &[Type]) -> bool {
         self.inputs == inputs
     }
 
+    #[allow(dead_code)]
     pub fn produces(&self, output: Type) -> bool {
         self.output == output
     }
@@ -638,27 +531,9 @@ pub fn find_by_name_and_inputs(
 mod tests
 {
     use super::*;
-    use crate::{primitives};
     use crate::connection::Connection;
     use crate::signature::InputSpec;
     use crate::function::Function;
-
-    #[test]
-    fn unary_call_adapter_can_be_generated_from_function() {
-        let result = call_unary(
-            &[Value::Grid(vec![
-                vec![1, 2],
-                vec![3, 4],
-            ])],
-            primitives::hmirror,
-        )
-        .unwrap();
-
-        assert_eq!(
-            result.output_type(),
-            Type::Grid,
-        );
-    }
 
     #[test]
     fn registry_contains_expected_primitives() {
@@ -790,35 +665,6 @@ mod tests
         assert!(matches!(
             result,
             Value::IntegerTuple((2, 1))
-        ));
-    }
-
-    #[test]
-    fn ternary_call_adapter_can_be_generated_from_function() {
-        let grid = vec![
-            vec![1, 2, 3, 4, 5],
-            vec![6, 7, 8, 9, 0],
-            vec![1, 2, 3, 4, 5],
-            vec![6, 7, 8, 9, 0],
-        ];
-
-        let result = call_ternary(
-            &[
-                Value::Grid(grid),
-                Value::IntegerTuple((1, 1)),
-                Value::IntegerTuple((2, 3)),
-            ],
-            primitives::crop,
-        )
-        .expect("crop should apply successfully");
-
-        assert!(matches!(
-            result,
-            Value::Grid(grid)
-                if grid == vec![
-                    vec![7, 8, 9],
-                    vec![2, 3, 4],
-                ]
         ));
     }
 
