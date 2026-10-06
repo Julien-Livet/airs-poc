@@ -2385,10 +2385,11 @@ mod tests
             )
             .expect("expected a Grid input");
 
-        assert_eq!(
-            connection.output_type(),
-            Type::Grid
-        );
+        assert!(matches!(
+            connection,
+            Connection::Input { name, ty }
+                if name == "I" && ty == Type::Grid
+        ));
     }
 
     #[test]
@@ -2415,10 +2416,10 @@ mod tests
             )
             .expect("expected a Grid primitive");
 
-        assert_eq!(
-            connection.output_type(),
-            Type::Grid
-        );
+        assert!(matches!(
+            connection,
+            Connection::Primitive { .. }
+        ));
     }
 
     #[test]
@@ -2435,14 +2436,17 @@ mod tests
         let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
         let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
 
-        let mut function_types =
+        let mut function_types1 =
+            FunctionTypeRegistry::new();
+
+        let mut function_types2 =
             FunctionTypeRegistry::new();
 
         let connection1 = build_connection(
             Type::Grid,
             2,
             &inputs,
-            &mut function_types,
+            &mut function_types1,
             &mut rng1,
         )
         .expect("expected a connection");
@@ -2451,7 +2455,7 @@ mod tests
             Type::Grid,
             2,
             &inputs,
-            &mut function_types,
+            &mut function_types2,
             &mut rng2,
         )
         .expect("expected a connection");
@@ -2613,6 +2617,40 @@ mod tests
         assert_eq!(
             candidates,
             vec![(source_id, Type::Integer)]
+        );
+    }
+
+    #[test]
+    fn rbind_candidates_handle_multi_argument_functions() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let source_type = function_types.type_of(
+            &[
+                Type::Integer,
+                Type::Grid,
+                Type::IntegerTuple,
+            ],
+            Type::Object,
+        );
+
+        let Type::Function(source_id) = source_type else {
+            panic!("expected function type");
+        };
+
+        let output_type = function_types.type_of(
+            &[Type::Integer, Type::Grid],
+            Type::Object,
+        );
+
+        let candidates =
+            rbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![(source_id, Type::IntegerTuple)]
         );
     }
 
@@ -2831,11 +2869,7 @@ mod tests
                 Type::Integer,
             );
 
-        let output_type =
-            function_types.type_of(
-                &[Type::Integer],
-                Type::Integer,
-            );
+        let output_type = Type::Integer;
 
         let groups =
             candidate_groups(
@@ -2855,9 +2889,7 @@ mod tests
         assert!(groups.iter().any(|group| {
             matches!(
                 group,
-                CandidateGroup::Dynamic {
-                    ..
-                }
+                CandidateGroup::Primitive { .. }
             )
         }));
 
@@ -3007,6 +3039,86 @@ mod tests
         assert_eq!(
             apply.map(CandidateGroup::len),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn lbind_candidates_reject_mismatched_input_types() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        function_types.type_of(
+            &[Type::Integer, Type::Grid],
+            Type::Object,
+        );
+
+        let output_type = function_types.type_of(
+            &[Type::IntegerTuple],
+            Type::Object,
+        );
+
+        let candidates =
+            lbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn rbind_candidates_reject_mismatched_input_types() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        function_types.type_of(
+            &[Type::Integer, Type::Grid],
+            Type::Object,
+        );
+
+        let output_type = function_types.type_of(
+            &[Type::IntegerTuple],
+            Type::Object,
+        );
+
+        let candidates =
+            rbind_candidates(
+                output_type,
+                &function_types,
+            );
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn apply_candidates_reject_functions_with_other_output() {
+        let mut function_types = FunctionTypeRegistry::new();
+
+        let integer_function =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let _grid_function =
+            function_types.type_of(
+                &[Type::Integer],
+                Type::Grid,
+            );
+
+        let Type::Function(integer_id) =
+            integer_function
+        else {
+            panic!("expected function type");
+        };
+
+        let candidates =
+            apply_candidates(
+                Type::Integer,
+                &function_types,
+            );
+
+        assert_eq!(
+            candidates,
+            vec![integer_id]
         );
     }
 }
