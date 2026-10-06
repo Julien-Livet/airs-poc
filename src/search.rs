@@ -6,6 +6,16 @@ use crate::signature::InputSpec;
 use std::collections::BTreeMap;
 use rand::seq::SliceRandom;
 
+fn dynamic_candidate_group(
+    candidates: Vec<DynamicCandidate>,
+) -> Option<CandidateGroup> {
+    if candidates.is_empty() {
+        return None;
+    }
+
+    Some(CandidateGroup::Dynamic { candidates })
+}
+
 fn primitive_candidate_group(
     name: &'static str,
     candidates: Vec<&'static PrimitiveEntry>,
@@ -18,16 +28,6 @@ fn primitive_candidate_group(
         name,
         candidates,
     })
-}
-
-fn dynamic_candidate_group(
-    candidates: Vec<DynamicCandidate>,
-) -> Option<CandidateGroup> {
-    if candidates.is_empty() {
-        return None;
-    }
-
-    Some(CandidateGroup::Dynamic { candidates })
 }
 
 fn shuffle_candidate_groups(
@@ -101,7 +101,7 @@ fn candidate_groups(
             )
             .into_iter()
             .map(|(id, ty)| {
-                DynamicCandidate::Lbind(id, ty)
+                DynamicCandidate::lbind(id, ty)
             })
             .collect(),
         )
@@ -117,7 +117,7 @@ fn candidate_groups(
             )
             .into_iter()
             .map(|(id, ty)| {
-                DynamicCandidate::Rbind(id, ty)
+                DynamicCandidate::rbind(id, ty)
             })
             .collect(),
         )
@@ -132,7 +132,7 @@ fn candidate_groups(
                 function_types,
             )
             .into_iter()
-            .map(DynamicCandidate::Apply)
+            .map(DynamicCandidate::apply)
             .collect(),
         )
     {
@@ -163,11 +163,23 @@ enum DynamicCandidate {
 }
 
 impl DynamicCandidate {
+    fn lbind(function_id: FunctionTypeId, fixed_type: Type) -> Self {
+        Self::Lbind(function_id, fixed_type)
+    }
+
+    fn rbind(function_id: FunctionTypeId, fixed_type: Type) -> Self {
+        Self::Rbind(function_id, fixed_type)
+    }
+
+    fn apply(function_id: FunctionTypeId) -> Self {
+        Self::Apply(function_id)
+    }
+
     fn name(&self) -> &'static str {
         match self {
-            DynamicCandidate::Lbind(..) => "lbind",
-            DynamicCandidate::Rbind(..) => "rbind",
-            DynamicCandidate::Apply(..) => "apply",
+            Self::Lbind(..) => "lbind",
+            Self::Rbind(..) => "rbind",
+            Self::Apply(..) => "apply",
         }
     }
 }
@@ -2956,7 +2968,6 @@ mod tests
                 Type::Integer,
             );
         
-        let apply_source_type =
         function_types.type_of(
             &[Type::Integer],
             output_type,
