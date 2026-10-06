@@ -4,6 +4,177 @@ use crate::types::Grid;
 use crate::environment::InputEnvironment;
 use crate::signature::InputSpec;
 
+fn generate_apply(
+    output_type: Type,
+    depth: usize,
+    terminals: &Terminals,
+    inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
+) -> Vec<Connection> {
+    let mut programs = Vec::new();
+
+    let function_types_snapshot = function_types
+        .all_types()
+        .map(|(id, function_type)| {
+            (id, function_type.clone())
+        })
+        .collect::<Vec<_>>();
+
+    for (function_id, function_type) in function_types_snapshot {
+        if function_type.output != output_type {
+            continue;
+        }
+
+        let function = Type::Function(function_id);
+
+        let functions = generate_up_to(
+            function,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        if functions.is_empty() {
+            continue;
+        }
+
+        let mut argument_lists = Vec::new();
+        let mut valid = true;
+
+        for argument_type in &function_type.inputs {
+            let arguments = generate_up_to(
+                *argument_type,
+                depth - 1,
+                terminals,
+                inputs,
+                function_types,
+            );
+
+            if arguments.is_empty() {
+                valid = false;
+                break;
+            }
+
+            argument_lists.push(
+                arguments
+                    .into_iter()
+                    .map(Box::new)
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        if !valid {
+            continue;
+        }
+
+        for function_program in functions {
+            for arguments in cartesian_product(
+                &argument_lists,
+            ) {
+                let arguments = arguments
+                    .into_iter()
+                    .map(|argument| *argument)
+                    .collect::<Vec<_>>();
+
+                if let Ok(connection) = Connection::apply(
+                    function_program.clone(),
+                    arguments,
+                    function_types,
+                ) {
+                    programs.push(connection);
+                }
+            }
+        }
+    }
+
+    programs
+}
+
+fn generate_lbind(
+    output_type: Type,
+    depth: usize,
+    terminals: &Terminals,
+    inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
+) -> Vec<Connection> {
+    let mut programs = Vec::new();
+
+    let Type::Function(output_id) = output_type else {
+        return programs;
+    };
+
+    let Some(output_inputs) =
+        function_types.inputs(output_id)
+    else {
+        return programs;
+    };
+
+    let Some(output_output) =
+        function_types.output(output_id)
+    else {
+        return programs;
+    };
+
+    let candidates = function_types
+        .all_types()
+        .filter_map(|(source_id, source_type)| {
+            if source_type.inputs.len()
+                != output_inputs.len() + 1
+            {
+                return None;
+            }
+
+            if source_type.inputs[1..]
+                != *output_inputs
+            {
+                return None;
+            }
+
+            if source_type.output != output_output {
+                return None;
+            }
+
+            Some((
+                Type::Function(source_id),
+                source_type.inputs[0],
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    for (source_type, fixed_type) in candidates {
+        let functions = generate_bounded(
+            source_type,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        let fixed_values = generate_bounded(
+            fixed_type,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        for function in functions {
+            for fixed in &fixed_values {
+                if let Ok(connection) = Connection::lbind(
+                    function.clone(),
+                    fixed.clone(),
+                    function_types,
+                ) {
+                    programs.push(connection);
+                }
+            }
+        }
+    }
+
+    programs
+}
+
 pub fn generate_inputs(
     output_type: Type,
     inputs: &[InputSpec],
@@ -43,12 +214,14 @@ pub fn generate_up_to(
     depth: usize,
     terminals: &Terminals,
     inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
 ) -> Vec<Connection> {
     generate_bounded(
         output_type,
         depth,
         terminals,
         inputs,
+        function_types,
     )
 }
 
@@ -57,12 +230,17 @@ pub fn generate(
     depth: usize,
     terminals: &Terminals,
     inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
 ) -> Vec<Connection> {
     let mut programs = Vec::new();
 
+    for terminal in &terminals.values {
+        terminal.value.output_type_with(function_types);
+    }
+
     if depth == 0 {
         for terminal in &terminals.values {
-            if terminal.value.ty() == output_type {
+            if terminal.value.output_type_with(function_types) == output_type {
                 programs.push(
                     Connection::named_terminal(
                         terminal.name,
@@ -96,6 +274,7 @@ pub fn generate(
                 depth - 1,
                 terminals,
                 inputs,
+                function_types,
             );
 
             if subprograms.is_empty() {
@@ -125,6 +304,26 @@ pub fn generate(
         }
     }
 
+    programs.extend(
+        generate_lbind(
+            output_type,
+            depth,
+            terminals,
+            inputs,
+            function_types,
+        )
+    );
+
+    programs.extend(
+        generate_apply(
+            output_type,
+            depth,
+            terminals,
+            inputs,
+            function_types,
+        )
+    );
+
     programs
 }
 
@@ -133,6 +332,7 @@ fn generate_bounded(
     depth: usize,
     terminals: &Terminals,
     inputs: &[InputSpec],
+    function_types: &mut crate::registry::FunctionTypeRegistry,
 ) -> Vec<Connection> {
     let mut programs = Vec::new();
 
@@ -142,6 +342,7 @@ fn generate_bounded(
             0,
             terminals,
             inputs,
+            function_types,
         );
     }
 
@@ -151,6 +352,7 @@ fn generate_bounded(
             depth - 1,
             terminals,
             inputs,
+            function_types,
         )
     );
 
@@ -168,6 +370,7 @@ fn generate_bounded(
                 depth - 1,
                 terminals,
                 inputs,
+                function_types,
             );
 
             if subprograms.is_empty() {
@@ -197,6 +400,16 @@ fn generate_bounded(
         }
     }
 
+    programs.extend(
+        generate_lbind(
+            output_type,
+            depth,
+            terminals,
+            inputs,
+            function_types,
+        )
+    );
+
     programs
 }
 
@@ -221,6 +434,7 @@ mod tests
 {
     use super::*;
     use crate::NamedTerminal;
+    use crate::function::Function;
 
     #[test]
     fn crop_can_be_generated_from_typed_inputs() {
@@ -243,11 +457,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Grid,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert!(
@@ -287,11 +505,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             0,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert_eq!(programs.len(), 2);
@@ -322,11 +544,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert_eq!(programs.len(), 4);
@@ -373,11 +599,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate_up_to(
             Type::Grid,
             2,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert!(
@@ -405,11 +635,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let expressions: std::collections::BTreeSet<_> = programs
@@ -440,11 +674,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Integer,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let expressions: std::collections::BTreeSet<_> = programs
@@ -470,11 +708,15 @@ mod tests
 
         let inputs = vec![];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             0,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         let expressions: std::collections::BTreeSet<_> = programs
@@ -525,11 +767,15 @@ mod tests
     fn named_integer_terminal_is_generated() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Integer,
             0,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         assert!(programs.iter().any(|program| {
@@ -541,11 +787,15 @@ mod tests
     fn named_terminals_can_be_composed() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Integer,
             1,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         let program = programs
@@ -571,11 +821,15 @@ mod tests
     fn named_integer_tuple_terminal_is_generated() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             0,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         let program = programs
@@ -601,11 +855,15 @@ mod tests
     fn named_integer_tuple_terminals_can_be_composed() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::IntegerTuple,
             1,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         let program = programs
@@ -631,11 +889,15 @@ mod tests
     fn named_terminals_are_filtered_by_type() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let integers = generate(
             Type::Integer,
             0,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         assert!(integers.iter().all(|program| {
@@ -645,11 +907,15 @@ mod tests
             )
         }));
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let integer_tuples = generate(
             Type::IntegerTuple,
             0,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         assert!(integer_tuples.iter().all(|program| {
@@ -664,11 +930,15 @@ mod tests
     fn boolean_terminals_are_generated() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Boolean,
             0,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         assert!(programs.iter().any(|program| {
@@ -684,11 +954,15 @@ mod tests
     fn flip_can_be_generated_from_boolean_terminal() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Boolean,
             1,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         let program = programs
@@ -712,11 +986,15 @@ mod tests
     fn flip_true_terminal_evaluates_to_false() {
         let terminals = Terminals::arc_agi();
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Boolean,
             1,
             &terminals,
             &[],
+            &mut function_types,
         );
 
         let program = programs
@@ -751,11 +1029,15 @@ mod tests
             },
         ];
 
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
         let programs = generate(
             Type::Integer,
             1,
             &terminals,
             &inputs,
+            &mut function_types,
         );
 
         assert!(
@@ -763,5 +1045,556 @@ mod tests
                 program.expression() == "add(TWO, X)"
             })
         );
+    }
+
+    #[test]
+    fn function_terminals_are_generated_by_function_type() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function = crate::function::Function::new(
+            vec![
+                InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "IDENTITY",
+                    Value::Function(Box::new(function)),
+                ),
+            ],
+        };
+
+        assert_eq!(
+            terminals.values[0]
+                .value
+                .output_type_with(&mut function_types),
+            function_type,
+        );
+
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function = crate::function::Function::new(
+            vec![
+                InputSpec {
+                    name: "X".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "X".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "IDENTITY",
+                    Value::Function(Box::new(function)),
+                ),
+            ],
+        };
+
+        assert_eq!(
+            terminals.values[0]
+                .value
+                .output_type_with(&mut function_types),
+            function_type,
+        );
+
+        let programs = generate(
+            function_type,
+            0,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        assert!(
+            programs.iter().any(|program| {
+                program.expression() == "IDENTITY"
+            })
+        );
+    }
+
+    #[test]
+    fn generate_includes_lbind() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        let target_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+                InputSpec {
+                    name: "y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+            ],
+        };
+
+        let programs = generate(
+            target_type,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        assert!(
+            programs
+                .iter()
+                .any(|program| {
+                    program.expression()
+                        == "lbind(F, 10)"
+                })
+        );
+    }
+
+    #[test]
+    fn generated_lbind_evaluates() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let target_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+                InputSpec {
+                    name: "y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+            ],
+        };
+
+        let programs = generate(
+            target_type,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        let program = programs
+            .iter()
+            .find(|program| {
+                println!(
+                    "candidate: {:?}",
+                    program.expression()
+                );
+
+                program.expression() == "lbind(F, 10)"
+            })
+            .expect("generated lbind not found");
+
+        let value = program
+            .output()
+            .expect("generated lbind should evaluate");
+
+        match value {
+            Value::Function(function) => {
+                assert_eq!(function.inputs.len(), 1);
+                assert_eq!(
+                    function.inputs[0].ty,
+                    Type::Integer
+                );
+            }
+
+            other => {
+                panic!(
+                    "expected Function, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generate_includes_chained_lbind() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        function_types.type_of(
+            &[Type::Integer, Type::Integer],
+            Type::Integer,
+        );
+
+        function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let target_type = function_types.type_of(
+            &[],
+            Type::Integer,
+        );
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+                InputSpec {
+                    name: "y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+                NamedTerminal {
+                    name: "20",
+                    value: Value::Integer(20),
+                },
+            ],
+        };
+
+        let programs = generate(
+            target_type,
+            2,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        assert!(
+            programs
+                .iter()
+                .any(|program| {
+                    program.expression()
+                        == "lbind(lbind(F, 10), 20)"
+                })
+        );
+    }
+
+    #[test]
+    fn generate_includes_apply() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function_type = function_types.type_of(
+            &[Type::Integer],
+            Type::Integer,
+        );
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+            ],
+        };
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        assert!(
+            programs.iter().any(|program| {
+                program.expression() == "apply(F, 10)"
+            })
+        );
+    }
+
+    #[test]
+    fn generated_apply_evaluates() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+            ],
+        };
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        let program = programs
+            .iter()
+            .find(|program| {
+                program.expression() == "apply(F, 10)"
+            })
+            .expect("generated apply not found");
+
+        let value = program
+            .output()
+            .expect("generated apply should evaluate");
+
+        match value {
+            Value::Integer(value) => {
+                assert_eq!(value, 10);
+            }
+
+            other => {
+                panic!(
+                    "expected Integer, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generate_includes_apply_with_multiple_arguments() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+                InputSpec {
+                    name: "y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+                NamedTerminal {
+                    name: "20",
+                    value: Value::Integer(20),
+                },
+            ],
+        };
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        assert!(
+            programs.iter().any(|program| {
+                program.expression()
+                    == "apply(F, 10, 20)"
+            })
+        );
+    }
+
+    #[test]
+    fn generated_apply_with_multiple_arguments_evaluates() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Function::new(
+            vec![
+                InputSpec {
+                    name: "x".to_string(),
+                    ty: Type::Integer,
+                },
+                InputSpec {
+                    name: "y".to_string(),
+                    ty: Type::Integer,
+                },
+            ],
+            Connection::input(
+                "x".to_string(),
+                Type::Integer,
+            ),
+        );
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal {
+                    name: "F",
+                    value: Value::Function(Box::new(function)),
+                },
+                NamedTerminal {
+                    name: "10",
+                    value: Value::Integer(10),
+                },
+                NamedTerminal {
+                    name: "20",
+                    value: Value::Integer(20),
+                },
+            ],
+        };
+
+        let programs = generate(
+            Type::Integer,
+            1,
+            &terminals,
+            &[],
+            &mut function_types,
+        );
+
+        let program = programs
+            .iter()
+            .find(|program| {
+                program.expression()
+                    == "apply(F, 10, 20)"
+            })
+            .expect("generated apply not found");
+
+        let value = program
+            .output()
+            .expect("generated apply should evaluate");
+
+        match value {
+            Value::Integer(value) => {
+                assert_eq!(value, 10);
+            }
+
+            other => {
+                panic!(
+                    "expected Integer, got {:?}",
+                    other
+                );
+            }
+        }
     }
 }
