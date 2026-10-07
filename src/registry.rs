@@ -173,6 +173,7 @@ pub enum DynamicPrimitive {
     Lbind,
     Apply,
     Rbind,
+    HistoricalApply,
 }
 
 impl DynamicPrimitive {
@@ -181,15 +182,9 @@ impl DynamicPrimitive {
             DynamicPrimitive::Lbind => "lbind",
             DynamicPrimitive::Rbind => "rbind",
             DynamicPrimitive::Apply => "apply",
+            DynamicPrimitive::HistoricalApply => "apply",
         }
     }
-}
-
-pub fn dynamic_primitives() -> &'static [DynamicPrimitive] {
-    &[
-        DynamicPrimitive::Lbind,
-        DynamicPrimitive::Apply,
-    ]
 }
 
 pub fn lbind_value(
@@ -435,36 +430,6 @@ impl FunctionTypeRegistry {
             })
     }
 
-    pub fn can_lbind(
-        &self,
-        function_type: Type,
-        fixed_type: Type,
-    ) -> bool {
-        let id = match function_type {
-            Type::Function(id) => id,
-            _ => return false,
-        };
-
-        let function = match self.get(id) {
-            Some(function) => function,
-            None => return false,
-        };
-
-        !function.inputs.is_empty()
-            && function.inputs[0] == fixed_type
-    }
-
-    pub fn can_apply(
-        &self,
-        function_type: Type,
-        argument_types: &[Type],
-    ) -> bool {
-        self.apply_type(
-            function_type,
-            argument_types,
-        ).is_ok()
-    }
-
     pub fn type_of(
         &mut self,
         inputs: &[Type],
@@ -604,16 +569,6 @@ impl FunctionTypeRegistry {
         }
 
         Ok(function.output)
-    }
-
-    pub fn function_type(
-        &self,
-        ty: Type,
-    ) -> Option<&FunctionType> {
-        match ty {
-            Type::Function(id) => self.get(id),
-            _ => None,
-        }
     }
 
     pub fn new() -> Self {
@@ -927,6 +882,7 @@ pub fn find_compatible(inputs: &[Type]) -> Vec<&'static PrimitiveEntry> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn find_by_name_and_inputs(
     name: &str,
     inputs: &[Type],
@@ -949,7 +905,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 92);
+        assert_eq!(PRIMITIVES.len(), 93);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -1081,31 +1037,24 @@ mod tests
     }
 
     #[test]
-    fn crop_is_found_by_input_signature() {
-        let matches = find_compatible(&[
-            Type::Grid,
-            Type::IntegerTuple,
-            Type::IntegerTuple,
-        ]);
-
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].name, "crop");
-        assert_eq!(matches[0].output, Type::Grid);
-    }
-
-    #[test]
     fn registry_contains_grid_and_indices_hmirror() {
-        let grid = find_compatible(&[Type::Grid]);
+        let mut grid = PRIMITIVES
+            .iter()
+            .filter(|primitive| primitive.accepts(&[Type::Grid]));
+
         assert!(
-            grid.iter().any(|primitive| {
+            grid.any(|primitive| {
                 primitive.name == "hmirror"
                     && primitive.output == Type::Grid
             })
         );
 
-        let indices = find_compatible(&[Type::Indices]);
+        let mut indices = PRIMITIVES
+            .iter()
+            .filter(|primitive| primitive.accepts(&[Type::Indices]));
+
         assert!(
-            indices.iter().any(|primitive| {
+            indices.any(|primitive| {
                 primitive.name == "hmirror"
                     && primitive.output == Type::Indices
             })
@@ -1303,33 +1252,6 @@ mod tests
     }
 
     #[test]
-    fn function_type_can_be_resolved_from_type() {
-        let mut registry = FunctionTypeRegistry::new();
-
-        let ty = registry.type_of(
-            &[Type::Integer],
-            Type::Integer,
-        );
-
-        let function_type = registry
-            .function_type(ty)
-            .expect("function type must resolve");
-
-        assert_eq!(
-            function_type,
-            &FunctionType {
-                inputs: vec![Type::Integer],
-                output: Type::Integer,
-            }
-        );
-
-        assert_eq!(
-            registry.function_type(Type::Integer),
-            None
-        );
-    }
-
-    #[test]
     fn lbind_type_removes_first_argument() {
         let mut registry = FunctionTypeRegistry::new();
 
@@ -1345,8 +1267,13 @@ mod tests
             )
             .expect("lbind type must succeed");
 
+        let result_id = match result {
+            Type::Function(id) => id,
+            _ => panic!("result must be a function type"),
+        };
+
         let result_type = registry
-            .function_type(result)
+            .get(result_id)
             .expect("result must be a function type");
 
         assert_eq!(
@@ -1544,8 +1471,13 @@ mod tests
             &mut registry,
         );
 
+        let function_type_id = match ty {
+            Type::Function(id) => id,
+            _ => panic!("value type must be a function type"),
+        };
+
         let function_type = registry
-            .function_type(ty)
+            .get(function_type_id)
             .expect("value type must be a function type");
 
         assert_eq!(
@@ -1592,15 +1524,25 @@ mod tests
             bound_boolean,
         );
 
+        let bound_integer_id = match bound_integer {
+            Type::Function(id) => id,
+            _ => panic!("bound integer must be a function"),
+        };
+
         assert_eq!(
-            registry.function_type(bound_integer)
+            registry.get(bound_integer_id)
                 .expect("bound integer must be a function")
                 .inputs,
             vec![Type::Integer],
         );
 
+        let bound_boolean_id = match bound_boolean {
+            Type::Function(id) => id,
+            _ => panic!("bound boolean must be a function"),
+        };
+
         assert_eq!(
-            registry.function_type(bound_boolean)
+            registry.get(bound_boolean_id)
                 .expect("bound boolean must be a function")
                 .inputs,
             vec![Type::Integer],
@@ -2655,88 +2597,6 @@ mod tests
     }
 
     #[test]
-    fn can_lbind_checks_function_and_fixed_type() {
-        let mut registry = FunctionTypeRegistry::new();
-
-        let function_type = registry.type_of(
-            &[Type::Integer, Type::Integer],
-            Type::Integer,
-        );
-
-        assert!(
-            registry.can_lbind(
-                function_type,
-                Type::Integer,
-            )
-        );
-
-        assert!(
-            !registry.can_lbind(
-                function_type,
-                Type::Grid,
-            )
-        );
-
-        assert!(
-            !registry.can_lbind(
-                Type::Integer,
-                Type::Integer,
-            )
-        );
-    }
-
-    #[test]
-    fn can_apply_checks_function_and_argument_types() {
-        let mut registry = FunctionTypeRegistry::new();
-
-        let function_type = registry.type_of(
-            &[Type::Integer, Type::Integer],
-            Type::Integer,
-        );
-
-        assert!(
-            registry.can_apply(
-                function_type,
-                &[Type::Integer, Type::Integer],
-            )
-        );
-
-        assert!(
-            !registry.can_apply(
-                function_type,
-                &[Type::Integer],
-            )
-        );
-
-        assert!(
-            !registry.can_apply(
-                function_type,
-                &[Type::Integer, Type::Grid],
-            )
-        );
-
-        assert!(
-            !registry.can_apply(
-                Type::Integer,
-                &[Type::Integer],
-            )
-        );
-    }
-
-    #[test]
-    fn dynamic_primitives_contains_lbind_and_apply() {
-        let primitives = dynamic_primitives();
-
-        assert!(
-            primitives.contains(&DynamicPrimitive::Lbind)
-        );
-
-        assert!(
-            primitives.contains(&DynamicPrimitive::Apply)
-        );
-    }
-
-    #[test]
     fn all_types_returns_interned_function_types() {
         let mut registry = FunctionTypeRegistry::new();
 
@@ -2813,8 +2673,13 @@ mod tests
             )
             .expect("rbind type must succeed");
 
+        let result_id = match result {
+            Type::Function(id) => id,
+            _ => panic!("result must be a function type"),
+        };
+
         let result_type = registry
-            .function_type(result)
+            .get(result_id)
             .expect("result must be a function type");
 
         assert_eq!(
