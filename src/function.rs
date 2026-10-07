@@ -4,12 +4,34 @@ use crate::registry::{Type, Value};
 use crate::environment::InputEnvironment;
 
 #[derive(Debug, Clone)]
+pub enum FunctionKind {
+    Defined,
+    PrimitiveFamily(&'static str),
+    BoundPrimitiveFamily {
+        name: &'static str,
+        fixed: Value,
+        left: bool,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub inputs: Vec<InputSpec>,
     pub body: Connection,
+    pub kind: FunctionKind,
 }
 
 impl Function {
+    pub fn primitive_family(
+        primitive: &'static crate::registry::PrimitiveEntry,
+    ) -> Self {
+        Self {
+            inputs: Vec::new(),
+            body: Connection::callable_primitive(primitive),
+            kind: FunctionKind::PrimitiveFamily(primitive.name),
+        }
+    }
+
     pub fn input_type(&self) -> Type {
         self.inputs[0].ty
     }
@@ -17,9 +39,7 @@ impl Function {
     pub fn body_type(&self) -> Type {
         self.body.output_type()
     }
-}
 
-impl Function {
     pub fn new(
         inputs: Vec<InputSpec>,
         body: Connection,
@@ -27,15 +47,61 @@ impl Function {
         Self {
             inputs,
             body,
+            kind: FunctionKind::Defined,
         }
     }
-}
 
-impl Function {
     pub fn lbind(
         &self,
         fixed: Connection,
     ) -> Result<Function, String> {
+        match &self.kind {
+            FunctionKind::PrimitiveFamily(name) => {
+                let fixed_value =
+                    fixed.output_with_inputs(&InputEnvironment::new())?;
+
+                return Ok(Function {
+                    inputs: Vec::new(),
+                    body: fixed,
+                    kind: FunctionKind::BoundPrimitiveFamily {
+                        name,
+                        fixed: fixed_value,
+                        left: true,
+                    },
+                });
+            }
+
+            FunctionKind::BoundPrimitiveFamily {
+                name,
+                fixed: existing_fixed,
+                left: false,
+            } => {
+                let fixed_value =
+                    fixed.output_with_inputs(&InputEnvironment::new())?;
+
+                let result = crate::registry::apply_primitive_family(
+                    name,
+                    &[
+                        fixed_value,
+                        existing_fixed.clone(),
+                    ],
+                )?;
+
+                return Ok(Function {
+                    inputs: Vec::new(),
+                    body: Connection::terminal(result),
+                    kind: FunctionKind::Defined,
+                });
+            }
+
+            FunctionKind::BoundPrimitiveFamily {
+                left: true,
+                ..
+            } => {}
+
+            FunctionKind::Defined { .. } => {}
+        }
+
         let first = self
             .inputs
             .first()
@@ -67,6 +133,49 @@ impl Function {
         &self,
         fixed: Connection,
     ) -> Result<Function, String> {
+        match &self.kind {
+            FunctionKind::PrimitiveFamily(name) => {
+                let fixed_value =
+                    fixed.output_with_inputs(&InputEnvironment::new())?;
+
+                return Ok(Function {
+                    inputs: Vec::new(),
+                    body: fixed,
+                    kind: FunctionKind::BoundPrimitiveFamily {
+                        name,
+                        fixed: fixed_value,
+                        left: false,
+                    },
+                });
+            }
+
+            FunctionKind::BoundPrimitiveFamily {
+                name,
+                fixed: existing_fixed,
+                left: true,
+            } => {
+                let fixed_value =
+                    fixed.output_with_inputs(&InputEnvironment::new())?;
+
+                let result = crate::registry::apply_primitive_family(
+                    name,
+                    &[
+                        existing_fixed.clone(),
+                        fixed_value,
+                    ],
+                )?;
+
+                return Ok(Function {
+                    inputs: Vec::new(),
+                    body: Connection::terminal(result),
+                    kind: FunctionKind::Defined,
+                });
+            }
+
+            FunctionKind::Defined
+            | FunctionKind::BoundPrimitiveFamily { .. } => {}
+        }
+
         let last = self
             .inputs
             .last()
@@ -93,9 +202,7 @@ impl Function {
 
         Ok(Function::new(inputs, body))
     }
-}
 
-impl Function {
     pub fn apply(
         &self,
         arguments: Vec<Connection>,
@@ -127,23 +234,65 @@ impl Function {
 
         Ok(body)
     }
-}
 
-impl Function {
     pub fn apply_values(
         &self,
         arguments: Vec<Value>,
     ) -> Result<Value, String> {
-        let arguments = arguments
-            .into_iter()
-            .map(Connection::terminal)
-            .collect();
+        match &self.kind {
+            FunctionKind::PrimitiveFamily(name) => {
+                if *name == "identity" {
+                    if arguments.len() != 1 {
+                        return Err(
+                            "identity expects one argument".to_string()
+                        );
+                    }
 
-        let body = self.apply(arguments)?;
+                    return Ok(arguments[0].clone());
+                }
 
-        let environment = InputEnvironment::new();
+                crate::registry::apply_primitive_family(
+                    name,
+                    &arguments,
+                )
+            }
 
-        body.output_with_inputs(&environment)
+            FunctionKind::Defined => {
+                let arguments = arguments
+                    .into_iter()
+                    .map(Connection::terminal)
+                    .collect();
+
+                let body = self.apply(arguments)?;
+
+                let environment = InputEnvironment::new();
+
+                body.output_with_inputs(&environment)
+            }
+
+            FunctionKind::BoundPrimitiveFamily {
+                name,
+                fixed,
+                left,
+            } => {
+                let mut all_arguments = Vec::with_capacity(
+                    arguments.len() + 1
+                );
+
+                if *left {
+                    all_arguments.push(fixed.clone());
+                    all_arguments.extend(arguments);
+                } else {
+                    all_arguments.extend(arguments);
+                    all_arguments.push(fixed.clone());
+                }
+
+                crate::registry::apply_primitive_family(
+                    name,
+                    &all_arguments,
+                )
+            }
+        }
     }
 }
 
@@ -568,5 +717,43 @@ mod tests {
             bound.body_type(),
             Type::Integer
         );
+    }
+
+    #[test]
+    fn primitive_family_is_marked_as_primitive_family() {
+        let function =
+            Function::primitive_family(&crate::primitives::add_entry);
+
+        assert!(matches!(
+            function.kind,
+            FunctionKind::PrimitiveFamily("add")
+        ));
+    }
+
+    #[test]
+    fn defined_function_still_applies() {
+        let input = InputSpec {
+            name: "x".to_string(),
+            ty: Type::Integer,
+        };
+
+        let body = Connection::input(
+            "x",
+            Type::Integer,
+        );
+
+        let function = Function::new(
+            vec![input],
+            body,
+        );
+
+        let result = function
+            .apply_values(vec![Value::Integer(7)])
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(7)
+        ));
     }
 }
