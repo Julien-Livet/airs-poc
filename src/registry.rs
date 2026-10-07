@@ -5,6 +5,24 @@ use crate::connection::Connection;
 use crate::types::*;
 use crate::function::Function;
 
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static size_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "size",
+        inputs: &[],
+        output: Type::Callable,
+        apply: size_callable_apply,
+    };
+
+fn size_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&size_callable_entry),
+    )))
+}
+
 #[distributed_slice(PRIMITIVES)]
 static EQUALITY_CALLABLE: PrimitiveEntry = PrimitiveEntry {
     name: "equality",
@@ -931,7 +949,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 51);
+        assert_eq!(PRIMITIVES.len(), 92);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
