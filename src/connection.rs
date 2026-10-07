@@ -2,6 +2,59 @@ use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry, Dynamic
 use crate::types::{Grid};
 use crate::function::{Function};
 
+pub fn apply_container_type(
+    container_type: Type,
+    mapped_type: Type,
+) -> Result<Type, String> {
+    match container_type {
+        Type::IntegerTuple | Type::IntegerVector => {
+            if mapped_type == Type::Integer {
+                Ok(Type::IntegerVector)
+            } else {
+                Err(format!(
+                    "historical apply: {:?} cannot be mapped from {:?}",
+                    mapped_type,
+                    container_type
+                ))
+            }
+        }
+
+        Type::GridVector => match mapped_type {
+            Type::Integer => Ok(Type::IntegerVector),
+            Type::Grid => Ok(Type::GridVector),
+            other => Err(format!(
+                "historical apply: unsupported GridVector mapped output {:?}",
+                other
+            )),
+        },
+
+        Type::ObjectVector => {
+            if mapped_type == Type::Object {
+                Ok(Type::ObjectVector)
+            } else {
+                Err(format!(
+                    "historical apply: unsupported ObjectVector mapped output {:?}",
+                    mapped_type
+                ))
+            }
+        }
+
+        Type::Objects => match mapped_type {
+            Type::Object => Ok(Type::Objects),
+            Type::Integer => Ok(Type::IntegerVector),
+            other => Err(format!(
+                "historical apply: unsupported Objects mapped output {:?}",
+                other
+            )),
+        },
+
+        other => Err(format!(
+            "historical apply: unsupported container type {:?}",
+            other
+        )),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NamedTerminal {
     pub name: &'static str,
@@ -153,6 +206,20 @@ impl Connection {
         })
     }
 
+    pub fn historical_apply(
+        inputs: Vec<Box<Connection>>,
+        output: Type,
+    ) -> Self {
+        Self::Dynamic {
+            primitive: DynamicPrimitive::HistoricalApply,
+            inputs,
+            output,
+            family: None,
+            fixed: None,
+            left: false,
+        }
+    }
+
     pub fn output_type_with(
         &self,
         function_types: &mut crate::registry::FunctionTypeRegistry,
@@ -265,9 +332,13 @@ impl Connection {
                         .output_type_with(function_types),
                 );
 
-                all_argument_types.extend(argument_types.iter().copied());
+                all_argument_types.extend(
+                    argument_types.iter().copied()
+                );
             } else {
-                all_argument_types.extend(argument_types.iter().copied());
+                all_argument_types.extend(
+                    argument_types.iter().copied()
+                );
 
                 all_argument_types.push(
                     fixed
@@ -531,6 +602,20 @@ impl Connection {
                             arguments,
                         )
                     }
+
+                    DynamicPrimitive::HistoricalApply => {
+                        if values.len() != 2 {
+                            return Err(
+                                "historical apply expects function and container"
+                                    .to_string()
+                            );
+                        }
+
+                        crate::registry::map_apply_value(
+                            &values[0],
+                            &values[1],
+                        )
+                    }
                 }
             }
         }
@@ -657,8 +742,8 @@ impl Connection {
                 name.clone()
             }
 
-            Connection::CallablePrimitive { .. } => {
-                todo!("CallablePrimitive behavior will be implemented next")
+            Connection::CallablePrimitive { primitive } => {
+                primitive.name.to_string()
             }
 
             Connection::Primitive { primitive, inputs } => {
@@ -855,6 +940,7 @@ mod tests {
     use crate::signature::InputSpec;
     use crate::registry::{PRIMITIVES, Value};
     use crate::function::{Function, FunctionKind};
+    use rand::SeedableRng;
 
     #[test]
     fn integer_generation_has_expected_cardinality() {
@@ -893,7 +979,7 @@ mod tests {
         );
 
         assert_eq!(depth_1.len(), 39);
-        assert_eq!(depth_2.len(), 6111);
+        assert_eq!(depth_2.len(), 6114);
     }
 
     #[test]
@@ -1331,7 +1417,7 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 22);
+        assert_eq!(programs.len(), 24);
 
         let expressions = programs
             .iter()
@@ -2702,4 +2788,37 @@ mod tests {
             Value::Integer(5)
         ));
     }    
+
+    #[test]
+    fn callable_generation_produces_callable_connections() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        crate::search::register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let inputs = Vec::<crate::signature::InputSpec>::new();
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let terminals = Terminals::arc_agi();
+
+        for _ in 0..100 {
+            let connection = crate::search::build_connection(
+                Type::Callable,
+                2,
+                &terminals,
+                &inputs,
+                &mut function_types,
+                &mut rng,
+            )
+            .expect("failed to generate Callable connection");
+
+            assert_eq!(
+                connection.output_type(),
+                Type::Callable
+            );
+        }
+    }
 }
