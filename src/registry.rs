@@ -7,6 +7,132 @@ use crate::function::Function;
 
 #[linkme::distributed_slice(PRIMITIVES)]
 #[allow(non_upper_case_globals)]
+pub static rot270_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "rot270",
+        inputs: &[],
+        output: Type::Callable,
+        apply: rot270_callable_apply,
+    };
+
+fn rot270_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&rot270_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static rot180_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "rot180",
+        inputs: &[],
+        output: Type::Callable,
+        apply: rot180_callable_apply,
+    };
+
+fn rot180_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&rot180_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static rot90_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "rot90",
+        inputs: &[],
+        output: Type::Callable,
+        apply: rot90_callable_apply,
+    };
+
+fn rot90_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&rot90_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static dmirror_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "dmirror",
+        inputs: &[],
+        output: Type::Callable,
+        apply: dmirror_callable_apply,
+    };
+
+fn dmirror_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&dmirror_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static cmirror_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "cmirror",
+        inputs: &[],
+        output: Type::Callable,
+        apply: cmirror_callable_apply,
+    };
+
+fn cmirror_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&cmirror_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static vmirror_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "vmirror",
+        inputs: &[],
+        output: Type::Callable,
+        apply: vmirror_callable_apply,
+    };
+
+fn vmirror_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&vmirror_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static hmirror_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "hmirror",
+        inputs: &[],
+        output: Type::Callable,
+        apply: hmirror_callable_apply,
+    };
+
+fn hmirror_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&hmirror_callable_entry),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
 pub static size_callable_entry: PrimitiveEntry =
     PrimitiveEntry {
         name: "size",
