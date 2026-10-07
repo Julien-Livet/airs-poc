@@ -1,5 +1,6 @@
 use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry, DynamicPrimitive};
 use crate::types::{Grid};
+use crate::function::{Function};
 
 #[derive(Debug, Clone)]
 pub struct NamedTerminal {
@@ -100,6 +101,10 @@ pub enum Connection {
         value: Value,
     },
 
+    CallablePrimitive {
+        primitive: &'static PrimitiveEntry,
+    },
+
     Primitive {
         primitive: &'static PrimitiveEntry,
         inputs: Vec<Box<Connection>>,
@@ -109,6 +114,9 @@ pub enum Connection {
         primitive: DynamicPrimitive,
         inputs: Vec<Box<Connection>>,
         output: Type,
+        family: Option<&'static str>,
+        fixed: Option<Box<Connection>>,
+        left: bool,
     },
 }
 
@@ -156,6 +164,8 @@ impl Connection {
                 value.output_type_with(function_types)
             }
 
+            Connection::CallablePrimitive { .. } => Type::Callable,
+
             Connection::Primitive { primitive, .. } => {
                 primitive.output
             }
@@ -173,6 +183,27 @@ impl Connection {
             primitive,
             inputs,
             output,
+            family: None,
+            fixed: None,
+            left: false,
+        }
+    }
+
+    pub fn dynamic_family(
+        primitive: DynamicPrimitive,
+        inputs: Vec<Box<Connection>>,
+        output: Type,
+        family: &'static str,
+        fixed: Connection,
+        left: bool,
+    ) -> Self {
+        Self::Dynamic {
+            primitive,
+            inputs,
+            output,
+            family: Some(family),
+            fixed: Some(Box::new(fixed)),
+            left,
         }
     }
 
@@ -190,6 +221,84 @@ impl Connection {
                 argument.output_type_with(function_types)
             })
             .collect::<Vec<_>>();
+
+        if let Connection::CallablePrimitive { primitive } = &function {
+            let output = function_types
+                .apply_callable_family(
+                    primitive.name,
+                    &argument_types,
+                )?;
+
+            let mut inputs = Vec::with_capacity(
+                1 + arguments.len()
+            );
+
+            inputs.push(Box::new(function));
+
+            inputs.extend(
+                arguments.into_iter().map(Box::new)
+            );
+
+            return Ok(Self::dynamic(
+                DynamicPrimitive::Apply,
+                inputs,
+                output,
+            ));
+        }
+
+        if let Connection::Dynamic {
+            family: Some(family),
+            output: Type::Callable,
+            fixed,
+            left,
+            ..
+        } = &function
+        {
+            let mut all_argument_types =
+                Vec::with_capacity(argument_types.len() + 1);
+
+            if *left {
+                all_argument_types.push(
+                    fixed
+                        .as_ref()
+                        .expect("bound callable has no fixed argument")
+                        .output_type_with(function_types),
+                );
+
+                all_argument_types.extend(argument_types.iter().copied());
+            } else {
+                all_argument_types.extend(argument_types.iter().copied());
+
+                all_argument_types.push(
+                    fixed
+                        .as_ref()
+                        .expect("bound callable has no fixed argument")
+                        .output_type_with(function_types),
+                );
+            }
+
+            let output = function_types
+                .apply_callable_family(
+                    family,
+                    &all_argument_types,
+                )?;
+
+            return Ok(Self::dynamic(
+                DynamicPrimitive::Apply,
+                {
+                    let mut inputs =
+                        Vec::with_capacity(1 + arguments.len());
+
+                    inputs.push(Box::new(function));
+                    inputs.extend(
+                        arguments.into_iter().map(Box::new)
+                    );
+
+                    inputs
+                },
+                output,
+            ));
+        }
 
         let output = function_types.apply_type(
             function_type,
@@ -224,6 +333,22 @@ impl Connection {
         let fixed_type =
             fixed.output_type_with(function_types);
 
+        if let Connection::CallablePrimitive { primitive } = &function {
+            let family = primitive.name;
+
+            return Ok(Self::dynamic_family(
+                DynamicPrimitive::Lbind,
+                vec![
+                    Box::new(function),
+                    Box::new(fixed.clone()),
+                ],
+                Type::Callable,
+                family,
+                fixed,
+                true,
+            ));
+        }
+
         let output = function_types.lbind_type(
             function_type,
             fixed_type,
@@ -249,6 +374,41 @@ impl Connection {
 
         let fixed_type =
             fixed.output_type_with(function_types);
+
+        if let Connection::CallablePrimitive { primitive } = &function {
+            let family = primitive.name;
+
+            return Ok(Self::dynamic_family(
+                DynamicPrimitive::Rbind,
+                vec![
+                    Box::new(function),
+                    Box::new(fixed.clone()),
+                ],
+                Type::Callable,
+                family,
+                fixed,
+                true,
+            ));
+        }
+
+        if let Connection::Dynamic {
+            family: Some(family),
+            output: Type::Callable,
+            ..
+        } = &function
+        {
+            return Ok(Self::dynamic_family(
+                DynamicPrimitive::Rbind,
+                vec![
+                    Box::new(function.clone()),
+                    Box::new(fixed.clone()),
+                ],
+                Type::Callable,
+                family,
+                fixed,
+                false,
+            ));
+        }
 
         let output = function_types.rbind_type(
             function_type,
@@ -291,6 +451,12 @@ impl Connection {
 
             Connection::Constant { name: _, value } => {
                 Ok(value.clone())
+            }
+
+            Connection::CallablePrimitive { primitive } => {
+                Ok(Value::Function(Box::new(
+                    Function::primitive_family(primitive),
+                )))
             }
 
             Connection::Primitive {
@@ -376,6 +542,10 @@ impl Connection {
 
             Connection::Constant { name: _, value: _} => false,
 
+            Connection::CallablePrimitive { .. } => {
+                todo!("CallablePrimitive behavior will be implemented next")
+            }
+
             Connection::Primitive { inputs, .. } => {
                 inputs.iter().any(|input| input.is_open())
             }
@@ -397,6 +567,11 @@ impl Connection {
             Value::Indices(_) => "Indices".to_string(),
             Value::Object(_) => "Object".to_string(),
             &Value::Function(_) => "Function".to_string(),
+            Value::IntegerVector(_) => "IntegerVector".to_string(),
+            Value::GridVector(_) => "GridVector".to_string(),
+            Value::TupleVector(_) => "TupleVector".to_string(),
+            Value::ObjectVector(_) => "ObjectVector".to_string(),
+            Value::Objects(_) => "Objects".to_string(),
         };
 
         Self::Constant { name, value }
@@ -429,6 +604,7 @@ impl Connection {
             Connection::Input { ty, .. } => {
                 *ty
             }
+            Connection::CallablePrimitive { .. } => Type::Callable,
             Connection::Dynamic { output, .. } => *output,
         }
     }
@@ -445,6 +621,10 @@ impl Connection {
 
             Connection::Constant { name: _, value } => {
                 Ok(value.clone())
+            }
+
+            Connection::CallablePrimitive { .. } => {
+                todo!("CallablePrimitive behavior will be implemented next")
             }
 
             Connection::Primitive {
@@ -477,6 +657,10 @@ impl Connection {
                 name.clone()
             }
 
+            Connection::CallablePrimitive { .. } => {
+                todo!("CallablePrimitive behavior will be implemented next")
+            }
+
             Connection::Primitive { primitive, inputs } => {
                 let args = inputs
                     .iter()
@@ -507,9 +691,13 @@ impl Connection {
             }
         }
     }
-}
+    
+    pub fn callable_primitive(
+        primitive: &'static PrimitiveEntry,
+    ) -> Self {
+        Self::CallablePrimitive { primitive }
+    }
 
-impl Connection {
     pub fn substitute_input(
         &self,
         name: &str,
@@ -526,6 +714,10 @@ impl Connection {
 
             Connection::Constant { .. } => {
                 self.clone()
+            }
+
+            Connection::CallablePrimitive { .. } => {
+                todo!("CallablePrimitive behavior will be implemented next")
             }
 
             Connection::Primitive {
@@ -555,6 +747,9 @@ impl Connection {
                 primitive,
                 inputs,
                 output,
+                family,
+                fixed,
+                left,
             } => {
                 let inputs = inputs
                     .iter()
@@ -572,6 +767,11 @@ impl Connection {
                     primitive: *primitive,
                     inputs,
                     output: *output,
+                    family: *family,
+                    fixed: fixed
+                        .as_ref()
+                        .map(|fixed| Box::new(fixed.substitute_input(name, replacement))),
+                    left: *left,
                 }
             }
         }
@@ -591,11 +791,14 @@ impl Value {
                 // provisoirement impossible à déterminer sans registre
                 todo!()
             }
+            Value::IntegerVector(_) => Type::IntegerVector,
+            Value::GridVector(_) => Type::GridVector,
+            Value::TupleVector(_) => Type::TupleVector,
+            Value::ObjectVector(_) => Type::ObjectVector,
+            Value::Objects(_) => Type::Objects,
         }
     }
-}
 
-impl Value {
     pub fn ty(&self) -> Type {
         match self {
             Value::Boolean(_) => Type::Boolean,
@@ -607,11 +810,14 @@ impl Value {
             Value::Function(_) => {
                 todo!()
             }
+            Value::IntegerVector(_) => Type::IntegerVector,
+            Value::GridVector(_) => Type::GridVector,
+            Value::TupleVector(_) => Type::TupleVector,
+            Value::ObjectVector(_) => Type::ObjectVector,
+            Value::Objects(_) => Type::Objects,
         }
     }
-}
 
-impl Value {
     pub fn output_type_with(
         &self,
         function_types: &mut FunctionTypeRegistry,
@@ -632,6 +838,11 @@ impl Value {
                     function.body_type(),
                 )
             }
+            Value::IntegerVector(_) => Type::IntegerVector,
+            Value::GridVector(_) => Type::GridVector,
+            Value::TupleVector(_) => Type::TupleVector,
+            Value::ObjectVector(_) => Type::ObjectVector,
+            Value::Objects(_) => Type::Objects,
         }
     }
 }
@@ -643,7 +854,7 @@ mod tests {
     use crate::search::{generate, semantic_signature, generate_inputs};
     use crate::signature::InputSpec;
     use crate::registry::{PRIMITIVES, Value};
-    use crate::function::Function;
+    use crate::function::{Function, FunctionKind};
 
     #[test]
     fn integer_generation_has_expected_cardinality() {
@@ -2171,5 +2382,324 @@ mod tests {
                 );
             }
         }
-    }        
+    }
+
+    #[test]
+    fn callable_primitive_has_callable_type() {
+        let connection = Connection::callable_primitive(&crate::primitives::add_entry);
+        assert_eq!(connection.output_type(), Type::Callable);
+    }
+
+    #[test]
+    fn callable_primitive_evaluates_to_function() {
+        let connection =
+            Connection::callable_primitive(&crate::primitives::add_entry);
+
+        let environment = InputEnvironment::new();
+
+        let value = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        match value {
+            Value::Function(function) => {
+                assert!(matches!(
+                    function.kind,
+                    FunctionKind::PrimitiveFamily("add")
+                ));
+            }
+            other => panic!(
+                "expected Function, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn callable_primitive_can_be_applied() {
+        let connection =
+            Connection::callable_primitive(&crate::primitives::add_entry);
+
+        let environment = InputEnvironment::new();
+
+        let value = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let result = crate::registry::apply_values(
+            &value,
+            vec![
+                Value::Integer(2),
+                Value::Integer(3),
+            ],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+    
+    #[test]
+    fn apply_connection_accepts_callable_primitive() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Connection::callable_primitive(
+            &crate::primitives::add_entry,
+        );
+
+        let applied = Connection::apply(
+            function,
+            vec![
+                Connection::terminal(
+                    Value::Integer(2),
+                ),
+                Connection::terminal(
+                    Value::Integer(3),
+                ),
+            ],
+            &mut function_types,
+        );
+
+        let applied = applied.unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let result = applied
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn lbind_connection_accepts_callable_primitive() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Connection::callable_primitive(
+            &crate::primitives::add_entry,
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(2),
+        );
+
+        let bound = Connection::lbind(
+            function,
+            fixed,
+            &mut function_types,
+        );
+
+        let bound = bound.unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function =
+            bound.output_with_inputs(&environment).unwrap();
+
+        let result =
+            crate::registry::apply_values(
+                &function,
+                vec![Value::Integer(3)],
+            )
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn rbind_connection_accepts_callable_primitive() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function = Connection::callable_primitive(
+            &crate::primitives::add_entry,
+        );
+
+        let fixed = Connection::terminal(
+            Value::Integer(3),
+        );
+
+        let bound = Connection::rbind(
+            function,
+            fixed,
+            &mut function_types,
+        );
+
+        let bound = bound.unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function =
+            bound.output_with_inputs(&environment).unwrap();
+
+        let result =
+            crate::registry::apply_values(
+                &function,
+                vec![Value::Integer(2)],
+            )
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+
+        assert_eq!(
+            bound.output_type(),
+            Type::Callable
+        );
+    }
+
+    #[test]
+    fn apply_connection_accepts_lbound_callable() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function =
+            Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let bound =
+            Connection::lbind(
+                function,
+                Connection::terminal(
+                    Value::Integer(2),
+                ),
+                &mut function_types,
+            )
+            .unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let bound_value =
+            bound.output_with_inputs(&environment)
+                .unwrap();
+
+        assert!(matches!(
+            bound_value,
+            Value::Function(_)
+        ));
+
+        let applied =
+            Connection::apply(
+                bound,
+                vec![
+                    Connection::terminal(
+                        Value::Integer(3),
+                    ),
+                ],
+                &mut function_types,
+            )
+            .unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let result =
+            applied.output_with_inputs(&environment)
+                .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn lbind_connection_has_callable_output_type() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function =
+            Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let bound =
+            Connection::lbind(
+                function,
+                Connection::terminal(
+                    Value::Integer(2),
+                ),
+                &mut function_types,
+            )
+            .unwrap();
+
+        assert_eq!(
+            bound.output_type_with(
+                &mut function_types,
+            ),
+            Type::Callable
+        );
+    }
+
+    #[test]
+    fn bind_callable_twice_applies_both_fixed_arguments() {
+        let mut function_types =
+            crate::registry::FunctionTypeRegistry::new();
+
+        let function =
+            Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let left_bound =
+            Connection::lbind(
+                function,
+                Connection::terminal(
+                    Value::Integer(2),
+                ),
+                &mut function_types,
+            )
+            .unwrap();
+
+        let right_bound =
+            Connection::rbind(
+                left_bound,
+                Connection::terminal(
+                    Value::Integer(3),
+                ),
+                &mut function_types,
+            )
+            .unwrap();
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let result =
+            right_bound
+                .output_with_inputs(&environment)
+                .unwrap();
+
+        let function = match result {
+            Value::Function(function) => function,
+            other => panic!(
+                "expected Function, got {other:?}"
+            ),
+        };
+
+        let result = function
+            .apply_values(Vec::new())
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }    
 }
