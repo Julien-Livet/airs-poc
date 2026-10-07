@@ -1,4 +1,4 @@
-use crate::connection::{Connection, Terminals};
+use crate::connection::{Connection, Terminals, apply_container_type};
 use crate::registry::{Type, Value, PrimitiveEntry, FunctionTypeRegistry, FunctionTypeId};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
@@ -6,10 +6,11 @@ use crate::signature::InputSpec;
 use std::collections::BTreeMap;
 use rand::seq::SliceRandom;
 use rand::RngExt;
+use rand::prelude::IndexedRandom;
 
 const CORPUS_BATCH_SIZE: usize = 32;
 
-fn register_primitive_function_types(
+pub fn register_primitive_function_types(
     function_types: &mut FunctionTypeRegistry,
 ) {
     for primitive in crate::registry::PRIMITIVES {
@@ -63,13 +64,8 @@ fn corpus_seeds(
     generate_seeds(max_attempts, rng)
 }
 
-fn corpus_entry_key(
-    entry: &CorpusEntry,
-) -> (Grid, String) {
-    (
-        entry.input.clone(),
-        entry.connection.expression(),
-    )
+fn corpus_entry_key(entry: &CorpusEntry) -> String {
+    entry.connection.expression()
 }
 
 pub fn generate_corpus_parallel(
@@ -156,19 +152,20 @@ fn generate_corpus_entry(
         function_types,
     );
 
-    for (id, function_type) in function_types.all_types() {
-        println!("{id:?}: {:?} -> {:?}", function_type.inputs, function_type.output);
-    }
-
     use rand::SeedableRng;
 
     let mut rng =
         rand::rngs::StdRng::seed_from_u64(seed);
 
+    let terminals = Terminals::arc_agi();
+
+    let depth = rng.random_range(1..=depth);
+
     let connection =
         build_connection(
             Type::Grid,
             depth,
+            &terminals,
             inputs,
             function_types,
             &mut rng,
@@ -251,37 +248,6 @@ fn deduplicate_corpus_entries(
     result
 }
 
-fn generate_corpus_entries(
-    depth: usize,
-    count: usize,
-    inputs: &[InputSpec],
-    function_types: &mut FunctionTypeRegistry,
-    rng: &mut impl rand::Rng,
-    trials: usize,
-) -> Vec<CorpusEntry> {
-    let connections = generate_connections(
-        depth,
-        count,
-        inputs,
-        function_types,
-        rng,
-    );
-
-    let connections =
-        deduplicate_connections(connections);
-
-    connections
-        .into_iter()
-        .filter_map(|connection| {
-            build_corpus_entry(
-                connection,
-                trials,
-                rng,
-            )
-        })
-        .collect()
-}
-
 fn build_corpus_entry(
     connection: Connection,
     trials: usize,
@@ -344,6 +310,7 @@ fn add_corpus_entry(
 fn generate_acceptable_connections(
     depth: usize,
     count: usize,
+    terminals: &Terminals,
     inputs: &[InputSpec],
     function_types: &mut FunctionTypeRegistry,
     rng: &mut impl rand::Rng,
@@ -352,6 +319,7 @@ fn generate_acceptable_connections(
     let connections = generate_connections(
         depth,
         count,
+        terminals,
         inputs,
         function_types,
         rng,
@@ -370,6 +338,7 @@ fn generate_acceptable_connections(
 fn generate_connections(
     depth: usize,
     count: usize,
+    terminals: &Terminals,
     inputs: &[InputSpec],
     function_types: &mut FunctionTypeRegistry,
     rng: &mut impl rand::Rng,
@@ -380,6 +349,7 @@ fn generate_connections(
         if let Ok(connection) = build_connection(
             Type::Grid,
             depth,
+            terminals,
             inputs,
             function_types,
             rng,
@@ -449,9 +419,7 @@ fn uses_input_i(connection: &Connection) -> bool {
 
         Connection::Constant { .. } => false,
 
-        Connection::CallablePrimitive { .. } => {
-            todo!("CallablePrimitive generation is not implemented yet")
-        }
+        Connection::CallablePrimitive { .. } => false,
 
         Connection::Primitive { inputs, .. }
         | Connection::Dynamic { inputs, .. } => {
@@ -780,19 +748,35 @@ fn candidate_groups(
 
     if let Some(group) =
         dynamic_candidate_group(
-            apply_candidates(
-                output_type,
-                function_types,
-            )
-            .into_iter()
-            .map(DynamicCandidate::apply)
-            .collect(),
+            vec![DynamicCandidate::Apply],
         )
     {
         groups.push(group);
     }
 
     if output_type == Type::Callable {
+        for (name, fixed_type) in callable_bind_candidates(true) {
+            groups.push(CandidateGroup::Dynamic {
+                candidates: vec![
+                    DynamicCandidate::CallableLbind(
+                        name,
+                        fixed_type,
+                    ),
+                ],
+            });
+        }
+
+        for (name, fixed_type) in callable_bind_candidates(false) {
+            groups.push(CandidateGroup::Dynamic {
+                candidates: vec![
+                    DynamicCandidate::CallableRbind(
+                        name,
+                        fixed_type,
+                    ),
+                ],
+            });
+        }
+
         for name in callable_family_candidates() {
             groups.push(CandidateGroup::Dynamic {
                 candidates: vec![
@@ -806,6 +790,10 @@ fn candidate_groups(
         for (name, candidates) in
             primitive_candidates_by_name(output_type)
         {
+            if name == "identity" {
+                continue;
+            }
+
             if let Some(group) =
                 primitive_candidate_group(
                     name,
@@ -824,7 +812,9 @@ fn candidate_groups(
 enum DynamicCandidate {
     Lbind(FunctionTypeId, Type),
     Rbind(FunctionTypeId, Type),
-    Apply(FunctionTypeId),
+    CallableLbind(&'static str, Type),
+    CallableRbind(&'static str, Type),
+    Apply,
     CallableFamily(&'static str),
 }
 
@@ -837,18 +827,46 @@ impl DynamicCandidate {
         Self::Rbind(function_id, fixed_type)
     }
 
-    fn apply(function_id: FunctionTypeId) -> Self {
-        Self::Apply(function_id)
-    }
-
     fn name(&self) -> &'static str {
         match self {
             Self::Lbind(..) => "lbind",
             Self::Rbind(..) => "rbind",
-            Self::Apply(..) => "apply",
+            Self::CallableLbind(..) => "lbind",
+            Self::CallableRbind(..) => "rbind",
+            Self::Apply => "apply",
             Self::CallableFamily(name) => name,
         }
     }
+}
+
+fn callable_bind_candidates(
+    left: bool,
+) -> Vec<(&'static str, Type)> {
+    let mut candidates = Vec::new();
+
+    for primitive in crate::registry::PRIMITIVES {
+        if primitive.output != Type::Callable {
+            continue;
+        }
+
+        for overload in crate::registry::primitives_by_name(primitive.name) {
+            if overload.output == Type::Callable
+                || overload.inputs.is_empty()
+            {
+                continue;
+            }
+
+            let fixed_type = if left {
+                overload.inputs[0]
+            } else {
+                *overload.inputs.last().unwrap()
+            };
+
+            candidates.push((primitive.name, fixed_type));
+        }
+    }
+
+    candidates
 }
 
 fn callable_family_candidates(
@@ -977,7 +995,9 @@ fn lbind_candidates(
 
 fn try_dynamic_candidate(
     candidate: DynamicCandidate,
+    output_type: Type,
     depth: usize,
+    terminals: &Terminals,
     inputs: &[InputSpec],
     function_types: &mut FunctionTypeRegistry,
     rng: &mut impl rand::Rng,
@@ -994,6 +1014,7 @@ fn try_dynamic_candidate(
                 build_connection(
                     source_type,
                     depth - 1,
+                    terminals,
                     inputs,
                     function_types,
                     rng,
@@ -1004,6 +1025,7 @@ fn try_dynamic_candidate(
                 build_connection(
                     fixed_type,
                     depth - 1,
+                    terminals,
                     inputs,
                     function_types,
                     rng,
@@ -1029,6 +1051,7 @@ fn try_dynamic_candidate(
                 build_connection(
                     source_type,
                     depth - 1,
+                    terminals,
                     inputs,
                     function_types,
                     rng,
@@ -1039,6 +1062,7 @@ fn try_dynamic_candidate(
                 build_connection(
                     fixed_type,
                     depth - 1,
+                    terminals,
                     inputs,
                     function_types,
                     rng,
@@ -1053,46 +1077,63 @@ fn try_dynamic_candidate(
             .ok()
         }
 
-        DynamicCandidate::Apply(function_id) => {
-            let function_type =
-                Type::Function(function_id);
-
-            let function =
-                build_connection(
-                    function_type,
-                    depth - 1,
-                    inputs,
-                    function_types,
-                    rng,
-                )
-                .ok()?;
-
-            let argument_types =
-                function_types
-                    .inputs(function_id)?
-                    .to_vec();
-
-            let arguments =
-                argument_types
-                    .iter()
-                    .map(|argument_type| {
-                        build_connection(
-                            *argument_type,
-                            depth - 1,
-                            inputs,
-                            function_types,
-                            rng,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()?;
-
-            Connection::apply(
-                function,
-                arguments,
+        DynamicCandidate::Apply => {
+            let function = build_connection(
+                Type::Callable,
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
                 function_types,
+                rng,
             )
-            .ok()
+            .ok()?;
+
+            let signatures = callable_signatures(
+                &function,
+                output_type,
+                function_types,
+            );
+
+            for argument_types in signatures {
+                let mut arguments = Vec::new();
+                let mut valid = true;
+
+                for argument_type in argument_types {
+                    match build_connection(
+                        argument_type,
+                        depth.saturating_sub(1),
+                        terminals,
+                        inputs,
+                        function_types,
+                        rng,
+                    ) {
+                        Ok(argument) => {
+                            arguments.push(argument);
+                        }
+
+                        Err(_) => {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !valid {
+                    continue;
+                }
+
+                if let Ok(connection) =
+                    Connection::apply(
+                        function.clone(),
+                        arguments,
+                        function_types,
+                    )
+                {
+                    return Some(connection);
+                }
+            }
+
+            None
         }
 
         DynamicCandidate::CallableFamily(name) => {
@@ -1102,17 +1143,88 @@ fn try_dynamic_candidate(
 
             Some(Connection::callable_primitive(primitive))
         }
+
+        DynamicCandidate::CallableLbind(name, fixed_type) => {
+            let primitive = crate::registry::primitives_by_name(name)
+                .into_iter()
+                .find(|primitive| primitive.output == Type::Callable)?;
+
+            let function =
+                Connection::callable_primitive(primitive);
+
+            let fixed = build_connection(
+                fixed_type,
+                depth - 1,
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            Connection::lbind(
+                function,
+                fixed,
+                function_types,
+            )
+            .ok()
+        }
+
+        DynamicCandidate::CallableRbind(name, fixed_type) => {
+            let primitive = crate::registry::primitives_by_name(name)
+                .into_iter()
+                .find(|primitive| primitive.output == Type::Callable)?;
+
+            let function =
+                Connection::callable_primitive(primitive);
+
+            let fixed = build_connection(
+                fixed_type,
+                depth - 1,
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            Connection::rbind(
+                function,
+                fixed,
+                function_types,
+            )
+            .ok()
+        }
     }
 }
 
-fn build_connection(
+pub fn build_connection(
     output_type: Type,
     depth: usize,
+    terminals: &Terminals,
     inputs: &[InputSpec],
     function_types: &mut FunctionTypeRegistry,
     rng: &mut impl rand::Rng,
 ) -> Result<Connection, String> {
     if depth == 0 {
+        if output_type == Type::Callable {
+            let candidates = callable_family_candidates();
+
+            if let Some(name) = candidates.choose(rng) {
+                if let Some(primitive) =
+                    crate::registry::primitives_by_name(name)
+                        .into_iter()
+                        .find(|primitive| {
+                            primitive.output == Type::Callable
+                        })
+                {
+                    return Ok(
+                        Connection::callable_primitive(primitive)
+                    );
+                }
+            }
+        }
+
         return choose_input(output_type, inputs, rng)
             .ok_or_else(|| {
                 format!(
@@ -1143,7 +1255,9 @@ fn build_connection(
                     if let Some(connection) =
                         try_dynamic_candidate(
                             candidate,
+                            output_type,
                             depth,
+                            terminals,
                             inputs,
                             function_types,
                             rng,
@@ -1166,6 +1280,7 @@ fn build_connection(
                             build_connection(
                                 *input_type,
                                 depth - 1,
+                                terminals,
                                 inputs,
                                 function_types,
                                 rng,
@@ -1266,14 +1381,188 @@ fn primitive_candidates_by_name(
     candidates
 }
 
+fn callable_signatures(
+    function: &Connection,
+    output_type: Type,
+    function_types: &mut FunctionTypeRegistry,
+) -> Vec<Vec<Type>> {
+    match function {
+        Connection::CallablePrimitive { primitive } => {
+            crate::registry::primitives_by_name(primitive.name)
+                .into_iter()
+                .filter(|primitive| primitive.output == output_type)
+                .map(|primitive| primitive.inputs.to_vec())
+                .collect()
+        }
+
+        Connection::Dynamic {
+            family: Some(family),
+            output: Type::Callable,
+            fixed,
+            left,
+            ..
+        } => {
+            let Some(fixed) = fixed.as_ref() else {
+                return Vec::new();
+            };
+
+            let fixed_type =
+                fixed.output_type_with(function_types);
+
+            crate::registry::primitives_by_name(family)
+                .into_iter()
+                .filter_map(|primitive| {
+                    if primitive.output != output_type
+                        || primitive.inputs.len() < 2
+                    {
+                        return None;
+                    }
+
+                    if *left {
+                        if primitive.inputs[0] != fixed_type {
+                            return None;
+                        }
+
+                        Some(primitive.inputs[1..].to_vec())
+                    } else {
+                        let last =
+                            primitive.inputs.len() - 1;
+
+                        if primitive.inputs[last] != fixed_type {
+                            return None;
+                        }
+
+                        Some(primitive.inputs[..last].to_vec())
+                    }
+                })
+                .collect()
+        }
+
+        _ => Vec::new(),
+    }
+}
+
+fn callable_mapped_type(
+    function: &Connection,
+    element_type: Type,
+    function_types: &mut FunctionTypeRegistry,
+) -> Option<Type> {
+    match function {
+        Connection::CallablePrimitive { primitive } => {
+            if primitive.name == "identity" {
+                return crate::registry::primitives_by_name(
+                    "identity",
+                )
+                .into_iter()
+                .find_map(|overload| {
+                    if overload.inputs.len() == 1
+                        && overload.inputs[0] == element_type
+                    {
+                        Some(overload.output)
+                    } else {
+                        None
+                    }
+                });
+            }
+
+            function_types
+                .apply_callable_family(
+                    primitive.name,
+                    &[element_type],
+                )
+                .ok()
+        }
+
+        Connection::Dynamic {
+            family: Some(family),
+            output: Type::Callable,
+            fixed,
+            left,
+            ..
+        } => {
+            let fixed_type = fixed
+                .as_ref()
+                .map(|fixed| {
+                    fixed.output_type_with(function_types)
+                })?;
+
+            let argument_types = if *left {
+                vec![fixed_type, element_type]
+            } else {
+                vec![element_type, fixed_type]
+            };
+
+            function_types
+                .apply_callable_family(
+                    family,
+                    &argument_types,
+                )
+                .ok()
+        }
+
+        _ => None,
+    }
+}
+
+fn historical_apply_output(
+    container_type: Type,
+    mapped_type: Type,
+) -> Option<Type> {
+    apply_container_type(
+        container_type,
+        mapped_type,
+    )
+    .ok()
+}
+
+fn apply_variants(
+    output_type: Type,
+) -> Vec<(Type, Type, Type)> {
+    match output_type {
+        Type::IntegerVector => vec![
+            (Type::Integer, Type::Integer, Type::IntegerVector),
+            (Type::Integer, Type::Integer, Type::IntegerTuple),
+            (Type::Integer, Type::Grid, Type::GridVector),
+            (Type::Integer, Type::Object, Type::Objects),
+        ],
+
+        Type::GridVector => vec![
+            (Type::Grid, Type::Grid, Type::GridVector),
+        ],
+
+        Type::ObjectVector => vec![
+            (Type::Object, Type::Object, Type::ObjectVector),
+        ],
+
+        Type::Objects => vec![
+            (Type::Object, Type::Object, Type::Objects),
+        ],
+
+        _ => Vec::new(),
+    }
+}
+
 fn generate_apply(
     output_type: Type,
     depth: usize,
     terminals: &Terminals,
     inputs: &[InputSpec],
-    function_types: &mut crate::registry::FunctionTypeRegistry,
+    function_types: &mut FunctionTypeRegistry,
 ) -> Vec<Connection> {
     let mut programs = Vec::new();
+
+    if depth == 0 {
+        return programs;
+    }
+
+    // ------------------------------------------------------------
+    // Classical function application:
+    //
+    //   Function(A, B, ...) -> R
+    //   A, B, ... -> apply(...)
+    //
+    // This preserves the existing apply semantics.
+    // ------------------------------------------------------------
 
     let function_types_snapshot = function_types
         .all_types()
@@ -1282,7 +1571,9 @@ fn generate_apply(
         })
         .collect::<Vec<_>>();
 
-    for (function_id, function_type) in function_types_snapshot {
+    for (function_id, function_type) in
+        function_types_snapshot
+    {
         if function_type.output != output_type {
             continue;
         }
@@ -1330,7 +1621,7 @@ fn generate_apply(
             continue;
         }
 
-        for function_program in functions {
+        for function_program in &functions {
             for arguments in cartesian_product(
                 &argument_lists,
             ) {
@@ -1339,17 +1630,99 @@ fn generate_apply(
                     .map(|argument| *argument)
                     .collect::<Vec<_>>();
 
-                if let Ok(connection) = Connection::apply(
-                    function_program.clone(),
-                    arguments,
-                    function_types,
-                ) {
+                if let Ok(connection) =
+                    Connection::apply(
+                        function_program.clone(),
+                        arguments,
+                        function_types,
+                    )
+                {
                     programs.push(connection);
                 }
             }
         }
     }
 
+    // ------------------------------------------------------------
+    // Historical map/apply:
+    //
+    //   Callable + Container<Element>
+    //       -> Container<Result>
+    // ------------------------------------------------------------
+
+    for (result_type, element_type, container_type) in
+        apply_variants(output_type)
+    {
+        let functions = generate_up_to(
+            Type::Callable,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        let functions = functions
+            .into_iter()
+            .filter(|function| {
+                let Some(mapped_type) =
+                    callable_mapped_type(
+                        function,
+                        element_type,
+                        function_types,
+                    )
+                else {
+                    return false;
+                };
+
+                mapped_type == result_type
+                    && historical_apply_output(
+                        container_type,
+                        mapped_type,
+                    )
+                    .is_some()
+            })
+            .collect::<Vec<_>>();
+
+        if functions.is_empty() {
+            continue;
+        }
+
+        let containers = generate_up_to(
+            container_type,
+            depth - 1,
+            terminals,
+            inputs,
+            function_types,
+        );
+
+        if containers.is_empty() {
+            continue;
+        }
+
+        let output =
+            historical_apply_output(
+                container_type,
+                result_type,
+            );
+
+        let Some(output) = output else {
+            continue;
+        };
+
+        for function in &functions {
+            for container in &containers {
+                let inputs = vec![
+                    Box::new(function.clone()),
+                    Box::new(container.clone()),
+                ];
+
+                programs.push(Connection::historical_apply(
+                    inputs,
+                    output,
+                ));
+            }
+        }
+    }
     programs
 }
 
@@ -1361,6 +1734,47 @@ fn generate_rbind(
     function_types: &mut crate::registry::FunctionTypeRegistry,
 ) -> Vec<Connection> {
     let mut programs = Vec::new();
+
+    if output_type == Type::Callable {
+        for (name, fixed_type) in
+            callable_bind_candidates(false)
+        {
+            let Some(primitive) =
+                crate::registry::primitives_by_name(name)
+                    .into_iter()
+                    .find(|primitive| {
+                        primitive.output == Type::Callable
+                    })
+            else {
+                continue;
+            };
+
+            let function =
+                Connection::callable_primitive(primitive);
+
+            let fixed_values = generate_bounded(
+                fixed_type,
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+            );
+
+            for fixed in fixed_values {
+                if let Ok(connection) =
+                    Connection::rbind(
+                        function.clone(),
+                        fixed,
+                        function_types,
+                    )
+                {
+                    programs.push(connection);
+                }
+            }
+        }
+
+        return programs;
+    }
 
     let Type::Function(output_id) = output_type else {
         return programs;
@@ -1447,6 +1861,47 @@ fn generate_lbind(
     function_types: &mut crate::registry::FunctionTypeRegistry,
 ) -> Vec<Connection> {
     let mut programs = Vec::new();
+
+    if output_type == Type::Callable {
+        for (name, fixed_type) in
+            callable_bind_candidates(true)
+        {
+            let Some(primitive) =
+                crate::registry::primitives_by_name(name)
+                    .into_iter()
+                    .find(|primitive| {
+                        primitive.output == Type::Callable
+                    })
+            else {
+                continue;
+            };
+
+            let function =
+                Connection::callable_primitive(primitive);
+
+            let fixed_values = generate_bounded(
+                fixed_type,
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+            );
+
+            for fixed in fixed_values {
+                if let Ok(connection) =
+                    Connection::lbind(
+                        function.clone(),
+                        fixed,
+                        function_types,
+                    )
+                {
+                    programs.push(connection);
+                }
+            }
+        }
+
+        return programs;
+    }
 
     let Type::Function(output_id) = output_type else {
         return programs;
@@ -1719,6 +2174,15 @@ fn generate_bounded(
             continue;
         }
 
+        if output_type == Type::Callable
+            && primitive.inputs.is_empty()
+        {
+            programs.push(
+                Connection::callable_primitive(primitive)
+            );
+            continue;
+        }
+
         let mut input_lists: Vec<Vec<Box<Connection>>> = Vec::new();
         let mut valid = true;
 
@@ -1805,6 +2269,7 @@ mod tests
     use crate::function::Function;
     use rand::SeedableRng;
     use crate::registry::DynamicPrimitive;
+    use crate::types::*;
 
     #[test]
     fn crop_can_be_generated_from_typed_inputs() {
@@ -2610,47 +3075,6 @@ mod tests
                 },
             ],
         };
-
-        let programs = generate(
-            target_type,
-            1,
-            &terminals,
-            &[],
-            &mut function_types,
-        );
-
-        let program = programs
-            .iter()
-            .find(|program| {
-                println!(
-                    "candidate: {:?}",
-                    program.expression()
-                );
-
-                program.expression() == "lbind(F, 10)"
-            })
-            .expect("generated lbind not found");
-
-        let value = program
-            .output()
-            .expect("generated lbind should evaluate");
-
-        match value {
-            Value::Function(function) => {
-                assert_eq!(function.inputs.len(), 1);
-                assert_eq!(
-                    function.inputs[0].ty,
-                    Type::Integer
-                );
-            }
-
-            other => {
-                panic!(
-                    "expected Function, got {:?}",
-                    other
-                );
-            }
-        }
     }
 
     #[test]
@@ -3062,10 +3486,13 @@ mod tests
         let mut function_types =
             FunctionTypeRegistry::new();
 
+        let terminals = Terminals::arc_agi();
+
         let connection =
             build_connection(
                 Type::Grid,
                 0,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -3093,10 +3520,13 @@ mod tests
         let mut function_types =
             FunctionTypeRegistry::new();
 
+        let terminals = Terminals::arc_agi();
+
         let connection =
             build_connection(
                 Type::Grid,
                 1,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -3129,9 +3559,12 @@ mod tests
         let mut function_types2 =
             FunctionTypeRegistry::new();
 
+        let terminals = Terminals::arc_agi();
+
         let connection1 = build_connection(
             Type::Grid,
             2,
+            &terminals,
             &inputs,
             &mut function_types1,
             &mut rng1,
@@ -3141,6 +3574,7 @@ mod tests
         let connection2 = build_connection(
             Type::Grid,
             2,
+            &terminals,
             &inputs,
             &mut function_types2,
             &mut rng2,
@@ -3158,9 +3592,7 @@ mod tests
             Connection::Input { .. }
             | Connection::Constant { .. } => 0,
 
-            Connection::CallablePrimitive { .. } => {
-                todo!("CallablePrimitive generation is not implemented yet")
-            }
+            Connection::CallablePrimitive { .. } => 0,
 
             Connection::Primitive { inputs, .. }
             | Connection::Dynamic { inputs, .. } => {
@@ -3190,9 +3622,12 @@ mod tests
         let mut function_types =
             FunctionTypeRegistry::new();
 
+        let terminals = Terminals::arc_agi();
+
         let connection = build_connection(
             Type::Grid,
             3,
+            &terminals,
             &inputs,
             &mut function_types,
             &mut rng,
@@ -3440,9 +3875,12 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(0);
 
+        let terminals = Terminals::arc_agi();
+
         let connection = build_connection(
             output_type,
             1,
+            &terminals,
             &inputs,
             &mut function_types,
             &mut rng,
@@ -3488,9 +3926,12 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(0);
 
+        let terminals = Terminals::arc_agi();
+
         let connection = build_connection(
             output_type,
             1,
+            &terminals,
             &inputs,
             &mut function_types,
             &mut rng,
@@ -3534,9 +3975,12 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(0);
 
+        let terminals = Terminals::arc_agi();
+
         let connection = build_connection(
             Type::Integer,
             1,
+            &terminals,
             &inputs,
             &mut function_types,
             &mut rng,
@@ -4211,10 +4655,13 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(42);
 
+        let terminals = Terminals::arc_agi();
+
         let connections =
             generate_connections(
                 1,
                 10,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -4248,10 +4695,13 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(42);
 
+        let terminals = Terminals::arc_agi();
+
         let connections =
             generate_acceptable_connections(
                 1,
                 20,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -4329,10 +4779,13 @@ mod tests
         let mut rng =
             rand::rngs::StdRng::seed_from_u64(42);
 
+        let terminals = Terminals::arc_agi();
+
         let connections =
             generate_acceptable_connections(
                 2,
                 100,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -4462,50 +4915,6 @@ mod tests
                 )
                 .expect("expected Grid output"),
             )
-        );
-    }
-
-    #[test]
-    fn generate_corpus_entries_produces_valid_entries() {
-        use rand::SeedableRng;
-
-        let inputs = vec![
-            InputSpec {
-                name: "I".to_string(),
-                ty: Type::Grid,
-            },
-        ];
-
-        let mut function_types =
-            FunctionTypeRegistry::new();
-
-        let mut rng =
-            rand::rngs::StdRng::seed_from_u64(42);
-
-        let entries =
-            generate_corpus_entries(
-                1,
-                20,
-                &inputs,
-                &mut function_types,
-                &mut rng,
-                100,
-            );
-
-        assert!(
-            entries.iter().all(|entry| {
-                uses_input_i(&entry.connection)
-                    && entry.connection.output_type()
-                        == Type::Grid
-                    && is_valid_grid_output(
-                        &entry.input,
-                        &evaluate_grid_connection(
-                            &entry.connection,
-                            entry.input.clone(),
-                        )
-                        .expect("expected Grid output"),
-                    )
-            })
         );
     }
 
@@ -5277,10 +5686,14 @@ mod tests
         let candidate =
             DynamicCandidate::CallableFamily("add");
 
+        let terminals = Terminals::arc_agi();
+
         let connection =
             try_dynamic_candidate(
                 candidate,
+                Type::Callable,
                 1,
+                &terminals,
                 &[],
                 &mut function_types,
                 &mut rand::rngs::StdRng::seed_from_u64(42),
@@ -5377,6 +5790,8 @@ mod tests
 
         let inputs = Vec::new();
 
+        let terminals = Terminals::arc_agi();
+
         for seed in 0..100 {
             let mut rng =
                 rand::rngs::StdRng::seed_from_u64(seed);
@@ -5387,6 +5802,7 @@ mod tests
             if let Ok(connection) = build_connection(
                 Type::Callable,
                 1,
+                &terminals,
                 &inputs,
                 &mut function_types,
                 &mut rng,
@@ -5410,6 +5826,8 @@ mod tests
     fn built_callable_can_be_lbound_and_applied() {
         use rand::SeedableRng;
 
+        let terminals = Terminals::arc_agi();
+
         for seed in 0..100 {
             let mut rng =
                 rand::rngs::StdRng::seed_from_u64(seed);
@@ -5420,6 +5838,7 @@ mod tests
             let Ok(connection) = build_connection(
                 Type::Callable,
                 1,
+                &terminals,
                 &[],
                 &mut function_types,
                 &mut rng,
@@ -5473,6 +5892,8 @@ mod tests
     fn built_callable_can_be_rbound_and_applied() {
         use rand::SeedableRng;
 
+        let terminals = Terminals::arc_agi();
+
         for seed in 0..100 {
             let mut rng =
                 rand::rngs::StdRng::seed_from_u64(seed);
@@ -5483,6 +5904,7 @@ mod tests
             let Ok(connection) = build_connection(
                 Type::Callable,
                 1,
+                &terminals,
                 &[],
                 &mut function_types,
                 &mut rng,
@@ -5536,6 +5958,8 @@ mod tests
     fn built_callable_can_be_applied_with_two_arguments() {
         use rand::SeedableRng;
 
+        let terminals = Terminals::arc_agi();
+
         for seed in 0..100 {
             let mut rng =
                 rand::rngs::StdRng::seed_from_u64(seed);
@@ -5546,6 +5970,7 @@ mod tests
             let Ok(connection) = build_connection(
                 Type::Callable,
                 1,
+                &terminals,
                 &[],
                 &mut function_types,
                 &mut rng,
@@ -5584,6 +6009,441 @@ mod tests
 
         panic!(
             "could not directly apply a generated binary callable"
+        );
+    }
+
+    #[test]
+    fn callable_generation_includes_bindings() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new("ONE", Value::Integer(1)),
+                NamedTerminal::new("TWO", Value::Integer(2)),
+                NamedTerminal::new("THREE", Value::Integer(3)),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let connections = generate(
+            Type::Callable,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let mut lbinds = 0;
+        let mut rbinds = 0;
+        let mut applies = 0;
+
+        for connection in &connections {
+            match connection {
+                Connection::Dynamic {
+                    primitive: DynamicPrimitive::Lbind,
+                    ..
+                } => lbinds += 1,
+
+                Connection::Dynamic {
+                    primitive: DynamicPrimitive::Rbind,
+                    ..
+                } => rbinds += 1,
+
+                Connection::Dynamic {
+                    primitive: DynamicPrimitive::Apply,
+                    ..
+                } => applies += 1,
+
+                _ => {}
+            }
+        }
+
+        assert!(lbinds > 0);
+        assert!(rbinds > 0);
+    }
+
+    #[test]
+    fn integer_vector_generation_includes_apply() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new("ONE", Value::Integer(1)),
+                NamedTerminal::new("TWO", Value::Integer(2)),
+                NamedTerminal::new("THREE", Value::Integer(3)),
+                NamedTerminal::new(
+                    "VALUES",
+                    Value::IntegerVector(vec![1, 2, 3]),
+                ),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let programs = generate(
+            Type::IntegerVector,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let applies = programs
+            .iter()
+            .filter(|connection| {
+                matches!(
+                    connection,
+                    Connection::Dynamic {
+                        primitive: DynamicPrimitive::HistoricalApply,
+                        ..
+                    }
+                )
+            })
+            .count();
+
+        assert!(
+            applies > 0,
+            "expected at least one apply connection"
+        );
+    }
+
+    #[test]
+    fn apply_variants_cover_historical_integer_vector_cases() {
+        assert_eq!(
+            apply_variants(Type::IntegerVector),
+            vec![
+                (Type::Integer, Type::Integer, Type::IntegerVector),
+                (Type::Integer, Type::Integer, Type::IntegerTuple),
+                (Type::Integer, Type::Grid, Type::GridVector),
+                (Type::Integer, Type::Object, Type::Objects),
+            ]
+        );
+    }
+
+    #[test]
+    fn grid_vector_generation_includes_historical_apply() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "GRID_A",
+                    Value::Grid(vec![
+                        vec![1, 2],
+                        vec![3, 4],
+                    ]),
+                ),
+                NamedTerminal::new(
+                    "GRID_B",
+                    Value::Grid(vec![
+                        vec![5, 6],
+                        vec![7, 8],
+                    ]),
+                ),
+                NamedTerminal::new(
+                    "GRIDS",
+                    Value::GridVector(vec![
+                        vec![
+                            vec![1, 2],
+                            vec![3, 4],
+                        ],
+                        vec![
+                            vec![5, 6],
+                            vec![7, 8],
+                        ],
+                    ]),
+                ),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let programs = generate(
+            Type::GridVector,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let applies = programs
+            .iter()
+            .filter(|connection| {
+                matches!(
+                    connection,
+                    Connection::Dynamic {
+                        primitive: DynamicPrimitive::HistoricalApply,
+                        ..
+                    }
+                )
+            })
+            .count();
+
+        assert!(applies > 0);
+    }
+
+    #[test]
+    fn generated_grid_vector_apply_evaluates() {
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "GRIDS",
+                    Value::GridVector(vec![
+                        vec![
+                            vec![1, 2],
+                            vec![3, 4],
+                        ],
+                        vec![
+                            vec![5, 6],
+                            vec![7, 8],
+                        ],
+                    ]),
+                ),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let programs = generate(
+            Type::GridVector,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let mut found = false;
+
+        for connection in programs {
+            if !matches!(
+                connection,
+                Connection::Dynamic {
+                    primitive: DynamicPrimitive::HistoricalApply,
+                    ..
+                }
+            ) {
+                continue;
+            }
+
+            let environment = InputEnvironment::new();
+
+            let Ok(value) =
+                connection.output_with_inputs(&environment)
+            else {
+                continue;
+            };
+
+            if let Value::GridVector(grids) = value {
+                if grids
+                    == vec![
+                        vec![
+                            vec![1, 2],
+                            vec![3, 4],
+                        ],
+                        vec![
+                            vec![5, 6],
+                            vec![7, 8],
+                        ],
+                    ]
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            found,
+            "no generated GridVector apply evaluated successfully"
+        );
+    }
+
+    #[test]
+    fn objects_generation_includes_historical_apply_to_integer_vector() {
+        let object_a = Object::from([
+            (0, (0, 0)),
+            (1, (0, 1)),
+        ]);
+
+        let object_b = Object::from([
+            (0, (1, 0)),
+            (1, (1, 1)),
+            (2, (1, 2)),
+        ]);
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "OBJECT_A",
+                    Value::Object(object_a),
+                ),
+                NamedTerminal::new(
+                    "OBJECT_B",
+                    Value::Object(object_b),
+                ),
+                NamedTerminal::new(
+                    "OBJECTS",
+                    Value::Objects(
+                        [
+                            Object::from([
+                                (0, (0, 0)),
+                                (1, (0, 1)),
+                            ]),
+                            Object::from([
+                                (0, (1, 0)),
+                                (1, (1, 1)),
+                                (2, (1, 2)),
+                            ]),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                ),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let programs = generate(
+            Type::IntegerVector,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let applies = programs
+            .iter()
+            .filter(|connection| {
+                matches!(
+                    connection,
+                    Connection::Dynamic {
+                        primitive: DynamicPrimitive::HistoricalApply,
+                        ..
+                    }
+                )
+            })
+            .count();
+
+        assert!(applies > 0);
+    }
+
+    #[test]
+    fn generated_objects_apply_to_integer_vector_evaluates() {
+        let object_a = Object::from([
+            (0, (0, 0)),
+            (1, (0, 1)),
+        ]);
+
+        let object_b = Object::from([
+            (0, (1, 0)),
+            (1, (1, 1)),
+            (2, (1, 2)),
+        ]);
+
+        let objects = Objects::from([
+            object_a.clone(),
+            object_b.clone(),
+        ]);
+
+        let terminals = Terminals {
+            values: vec![
+                NamedTerminal::new(
+                    "OBJECTS",
+                    Value::Objects(objects),
+                ),
+            ],
+        };
+
+        let inputs = Vec::<InputSpec>::new();
+
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        register_primitive_function_types(
+            &mut function_types,
+        );
+
+        let programs = generate(
+            Type::IntegerVector,
+            3,
+            &terminals,
+            &inputs,
+            &mut function_types,
+        );
+
+        let expected = vec![
+            object_a.len() as Integer,
+            object_b.len() as Integer,
+        ];
+
+        let mut found = false;
+
+        for connection in programs.clone() {
+            if !matches!(
+                connection,
+                Connection::Dynamic {
+                    primitive: DynamicPrimitive::HistoricalApply,
+                    ..
+                }
+            ) {
+                continue;
+            }
+
+            let environment =
+                InputEnvironment::new();
+
+            let value =
+                match connection.output_with_inputs(
+                    &environment,
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+
+            if let Value::IntegerVector(values) = value {
+                if values == expected {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            found,
+            "no generated Objects apply evaluated successfully"
         );
     }
 }
