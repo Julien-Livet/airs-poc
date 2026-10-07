@@ -1,6 +1,527 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+#[primitive("rot270")]
+pub fn rot270(
+    grid: Grid,
+) -> Grid {
+    let rows = grid.len();
+
+    if rows == 0 {
+        panic!("rot270: empty Grid");
+    }
+
+    let cols = grid[0].len();
+
+    if cols == 0 || grid.iter().any(|row| row.len() != cols) {
+        panic!("rot270: invalid Grid");
+    }
+
+    let mut result = vec![vec![0; rows]; cols];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[cols - 1 - j][i] = grid[i][j];
+        }
+    }
+
+    if result == grid {
+        panic!("rot270 produced identity");
+    }
+
+    result
+}
+
+#[primitive("rot180")]
+pub fn rot180(
+    grid: Grid,
+) -> Grid {
+    let rows = grid.len();
+
+    if rows == 0 {
+        panic!("rot180: empty Grid");
+    }
+
+    let cols = grid[0].len();
+
+    if cols == 0 || grid.iter().any(|row| row.len() != cols) {
+        panic!("rot180: invalid Grid");
+    }
+
+    let mut result = vec![vec![0; cols]; rows];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[rows - 1 - i][cols - 1 - j] = grid[i][j];
+        }
+    }
+
+    if result == grid {
+        panic!("rot180 produced identity");
+    }
+
+    result
+}
+
+#[primitive("rot90")]
+pub fn rot90(
+    grid: Grid,
+) -> Grid {
+    let rows = grid.len();
+
+    if rows == 0 {
+        panic!("rot90: empty Grid");
+    }
+
+    let cols = grid[0].len();
+
+    if cols == 0 || grid.iter().any(|row| row.len() != cols) {
+        panic!("rot90: invalid Grid");
+    }
+
+    let mut result = vec![vec![0; rows]; cols];
+
+    for i in 0..rows {
+        for j in 0..cols {
+            result[j][rows - 1 - i] = grid[i][j];
+        }
+    }
+
+    if result == grid {
+        panic!("rot90 produced identity");
+    }
+
+    result
+}
+
+#[primitive("lrcorner")]
+pub fn lrcorner_object(
+    object: Object,
+) -> IntegerTuple {
+    lrcorner_indices(toindices_object(object))
+}
+
+#[primitive("lrcorner")]
+pub fn lrcorner_indices(
+    indices: Indices,
+) -> IntegerTuple {
+    let max_y = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .max()
+        .expect("lrcorner: empty Indices");
+
+    let max_x = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .max()
+        .expect("lrcorner: empty Indices");
+
+    (max_y, max_x)
+}
+
+#[primitive("llcorner")]
+pub fn llcorner_object(
+    object: Object,
+) -> IntegerTuple {
+    llcorner_indices(toindices_object(object))
+}
+
+#[primitive("llcorner")]
+pub fn llcorner_indices(
+    indices: Indices,
+) -> IntegerTuple {
+    let max_y = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .max()
+        .expect("llcorner: empty Indices");
+
+    let min_x = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .min()
+        .expect("llcorner: empty Indices");
+
+    (max_y, min_x)
+}
+
+#[primitive("urcorner")]
+pub fn urcorner_object(
+    object: Object,
+) -> IntegerTuple {
+    urcorner_indices(toindices_object(object))
+}
+
+#[primitive("urcorner")]
+pub fn urcorner_indices(
+    indices: Indices,
+) -> IntegerTuple {
+    let min_y = indices
+        .iter()
+        .map(|(y, _)| *y)
+        .min()
+        .expect("urcorner: empty Indices");
+
+    let max_x = indices
+        .iter()
+        .map(|(_, x)| *x)
+        .max()
+        .expect("urcorner: empty Indices");
+
+    (min_y, max_x)
+}
+
+#[primitive("ulcorner")]
+pub fn ulcorner_object(
+    object: Object,
+) -> IntegerTuple {
+     ulcorner_indices(toindices_object(object))
+}
+
+#[primitive("ulcorner")]
+pub fn ulcorner_indices(
+    indices: Indices,
+) -> IntegerTuple {
+    (
+        uppermost_indices(indices.clone()),
+        leftmost_indices(indices),
+    )
+}
+
+#[primitive("vperiod")]
+pub fn vperiod(
+    object: Object,
+) -> Integer {
+    if object.is_empty() {
+        panic!("vperiod: empty Object");
+    }
+
+    let normalized = normalize_object(object);
+    let height = height_object(normalized.clone());
+
+    for p in 1..height {
+        let offsetted = shift_object(
+            normalized.clone(),
+            (-p, 0),
+        );
+
+        let pruned: Object = offsetted
+            .into_iter()
+            .filter(|(_, (i, _))| *i >= 0)
+            .collect();
+
+        if pruned.iter().all(|cell| normalized.contains(cell)) {
+            return p;
+        }
+    }
+
+    height
+}
+
+#[primitive("hperiod")]
+pub fn hperiod(
+    object: Object,
+) -> Integer {
+    if object.is_empty() {
+        panic!("hperiod: empty Object");
+    }
+
+    let normalized = normalize_object(object);
+    let width = width_object(normalized.clone());
+
+    for p in 1..width {
+        let offsetted = shift_object(
+            normalized.clone(),
+            (0, -p),
+        );
+
+        let pruned: Object = offsetted
+            .into_iter()
+            .filter(|(_, (_, j))| *j >= 0)
+            .collect();
+
+        if pruned.iter().all(|cell| normalized.contains(cell)) {
+            return p;
+        }
+    }
+
+    width
+}
+
+#[primitive("width")]
+pub fn width_grid(
+    grid: Grid,
+) -> Integer {
+    grid.first()
+        .map(|row| row.len() as Integer)
+        .expect("width: empty Grid")
+}
+
+#[primitive("width")]
+pub fn width_object(
+    object: Object,
+) -> Integer {
+    rightmost_object(object.clone())
+        - leftmost_object(object)
+        + 1
+}
+
+#[primitive("width")]
+pub fn width_indices(
+    indices: Indices,
+) -> Integer {
+    rightmost_indices(indices.clone())
+        - leftmost_indices(indices)
+        + 1
+}
+
+#[primitive("height")]
+pub fn height_grid(
+    grid: Grid,
+) -> Integer {
+    grid.len() as Integer
+}
+
+#[primitive("height")]
+pub fn height_object(
+    object: Object,
+) -> Integer {
+    lowermost_object(object.clone())
+        - uppermost_object(object)
+        + 1
+}
+
+#[primitive("height")]
+pub fn height_indices(
+    indices: Indices,
+) -> Integer {
+    lowermost_indices(indices.clone())
+        - uppermost_indices(indices)
+        + 1
+}
+
+#[primitive("normalize")]
+pub fn normalize_object(
+    object: Object,
+) -> Object {
+    if object.is_empty() {
+        return object;
+    }
+
+    let di = -uppermost_object(object.clone());
+    let dj = -leftmost_object(object.clone());
+
+    shift_object(object, (di, dj))
+}
+
+#[primitive("normalize")]
+pub fn normalize_indices(
+    indices: Indices,
+) -> Indices {
+    if indices.is_empty() {
+        panic!("normalize: empty Indices");
+    }
+
+    let di = -uppermost_indices(indices.clone());
+    let dj = -leftmost_indices(indices.clone());
+
+    shift_indices(indices, (di, dj))
+}
+
+#[primitive("shift")]
+pub fn shift_object(
+    object: Object,
+    direction: IntegerTuple,
+) -> Object {
+    let (di, dj) = direction;
+
+    object
+        .into_iter()
+        .map(|(color, (i, j))| {
+            (color, (i + di, j + dj))
+        })
+        .collect()
+}
+
+#[primitive("shift")]
+pub fn shift_indices(
+    indices: Indices,
+    direction: IntegerTuple,
+) -> Indices {
+    let (di, dj) = direction;
+
+    indices
+        .into_iter()
+        .map(|(i, j)| (i + di, j + dj))
+        .collect()
+}
+
+#[primitive("rightmost")]
+pub fn rightmost_object(
+    object: Object,
+) -> Integer {
+    let indices = toindices_object(object);
+
+    indices
+        .iter()
+        .map(|(_, j)| *j)
+        .max()
+        .expect("rightmost: empty Object")
+}
+
+#[primitive("rightmost")]
+pub fn rightmost_indices(
+    indices: Indices,
+) -> Integer {
+    indices
+        .iter()
+        .map(|(_, j)| *j)
+        .max()
+        .expect("rightmost: empty Indices")
+}
+
+#[primitive("leftmost")]
+pub fn leftmost_object(
+    object: Object,
+) -> Integer {
+    let indices = toindices_object(object);
+
+    indices
+        .iter()
+        .map(|(_, j)| *j)
+        .min()
+        .expect("leftmost: empty Object")
+}
+
+#[primitive("leftmost")]
+pub fn leftmost_indices(
+    indices: Indices,
+) -> Integer {
+    indices
+        .iter()
+        .map(|(_, j)| *j)
+        .min()
+        .expect("leftmost: empty Indices")
+}
+
+#[primitive("lowermost")]
+pub fn lowermost_object(
+    object: Object,
+) -> Integer {
+    let indices = toindices_object(object);
+
+    indices
+        .iter()
+        .map(|(i, _)| *i)
+        .max()
+        .expect("lowermost: empty Object")
+}
+
+#[primitive("lowermost")]
+pub fn lowermost_indices(
+    indices: Indices,
+) -> Integer {
+    indices
+        .iter()
+        .map(|(i, _)| *i)
+        .max()
+        .expect("lowermost: empty Indices")
+}
+
+#[primitive("uppermost")]
+pub fn uppermost_object(
+    object: Object,
+) -> Integer {
+    let indices = toindices_object(object);
+    indices
+        .iter()
+        .map(|(i, _)| *i)
+        .min()
+        .expect("uppermost: empty Object")
+}
+
+#[primitive("uppermost")]
+pub fn uppermost_indices(
+    indices: Indices,
+) -> Integer {
+    indices
+        .iter()
+        .map(|(i, _)| *i)
+        .min()
+        .expect("uppermost: empty Indices")
+}
+
+#[primitive("toindices")]
+pub fn toindices_object(
+    object: Object,
+) -> Indices {
+    if object.is_empty() {
+        panic!("toindices: empty Object");
+    }
+
+    object
+        .iter()
+        .map(|(_, position)| *position)
+        .collect()
+}
+
+#[primitive("toindices")]
+pub fn toindices_indices(
+    indices: Indices,
+) -> Indices {
+    indices
+}
+
+#[primitive("size")]
+pub fn size_integer_tuple(
+    value: IntegerTuple,
+) -> Integer {
+    2
+}
+
+#[primitive("size")]
+pub fn size_indices(
+    value: Indices,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
+pub fn size_object(
+    value: Object,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
+pub fn size_objects(
+    value: Objects,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
+pub fn size_integer_vector(
+    value: IntegerVector,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
+pub fn size_grid(
+    value: Grid,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
+pub fn size_object_vector(
+    value: ObjectVector,
+) -> Integer {
+    value.len() as Integer
+}
+
 #[primitive("equality")]
 pub fn equality_boolean(a: Boolean, b: Boolean) -> Boolean {
     a == b
@@ -970,5 +1491,550 @@ fn color_returns_first_object_color() {
                 name
             );
         }
+    }
+
+    #[test]
+    fn size_matches_historical_cardinality() {
+        assert_eq!(size_integer_tuple((4, 7)), 2);
+
+        assert_eq!(
+            size_integer_vector(vec![1, 2, 3]),
+            3,
+        );
+
+        assert_eq!(
+            size_grid(vec![
+                vec![1, 2],
+                vec![3, 4],
+                vec![5, 6],
+            ]),
+            3,
+        );
+
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (2, 3)),
+            (4, (5, 6)),
+        ]);
+
+        assert_eq!(size_object(object.clone()), 2);
+
+        let objects: Objects =
+            std::collections::BTreeSet::from([
+                object.clone(),
+                std::collections::BTreeSet::from([
+                    (7, (1, 2)),
+                ]),
+            ]);
+
+        assert_eq!(size_objects(objects), 2);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (1, 2),
+                (3, 4),
+            ]);
+
+        assert_eq!(size_indices(indices), 2);
+
+        assert_eq!(
+            size_object_vector(vec![object]),
+            1,
+        );
+    }
+
+    #[test]
+    fn toindices_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (2, 3)),
+            (4, (5, 6)),
+            (7, (2, 3)),
+        ]);
+
+        let expected: Indices =
+            std::collections::BTreeSet::from([
+                (2, 3),
+                (5, 6),
+            ]);
+
+        assert_eq!(toindices_object(object), expected);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (1, 2),
+                (3, 4),
+            ]);
+
+        assert_eq!(
+            toindices_indices(indices.clone()),
+            indices,
+        );
+
+        assert_eq!(
+            toindices_indices(Indices::new()),
+            Indices::new(),
+        );
+    }
+
+    #[test]
+    fn uppermost_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (4, 7)),
+            (2, (2, 5)),
+            (3, (6, 1)),
+        ]);
+
+        assert_eq!(uppermost_object(object), 2);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (8, 3),
+                (5, 9),
+                (7, 1),
+            ]);
+
+        assert_eq!(uppermost_indices(indices), 5);
+    }
+
+    #[test]
+    fn lowermost_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (4, 7)),
+            (2, (2, 5)),
+            (3, (6, 1)),
+        ]);
+
+        assert_eq!(lowermost_object(object), 6);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (8, 3),
+                (5, 9),
+                (7, 1),
+            ]);
+
+        assert_eq!(lowermost_indices(indices), 8);
+    }
+
+    #[test]
+    fn leftmost_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (4, 7)),
+            (2, (2, 5)),
+            (3, (6, 1)),
+        ]);
+
+        assert_eq!(leftmost_object(object), 1);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (8, 3),
+                (5, 9),
+                (7, 1),
+            ]);
+
+        assert_eq!(leftmost_indices(indices), 1);
+    }
+
+    #[test]
+    fn rightmost_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (4, 7)),
+            (2, (2, 5)),
+            (3, (6, 1)),
+        ]);
+
+        assert_eq!(rightmost_object(object), 7);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (8, 3),
+                (5, 9),
+                (7, 1),
+            ]);
+
+        assert_eq!(rightmost_indices(indices), 9);
+    }
+
+    #[test]
+    fn shift_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (2, 3)),
+            (4, (5, 6)),
+        ]);
+
+        let expected_object: Object =
+            std::collections::BTreeSet::from([
+                (1, (4, 2)),
+                (4, (7, 5)),
+            ]);
+
+        assert_eq!(
+            shift_object(object, (2, -1)),
+            expected_object,
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (2, 3),
+                (5, 6),
+            ]);
+
+        let expected_indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 2),
+                (7, 5),
+            ]);
+
+        assert_eq!(
+            shift_indices(indices, (2, -1)),
+            expected_indices,
+        );
+
+        assert_eq!(
+            shift_object(Object::new(), (3, 4)),
+            Object::new(),
+        );
+
+        assert_eq!(
+            shift_indices(Indices::new(), (3, 4)),
+            Indices::new(),
+        );
+    }
+
+    #[test]
+    fn normalize_matches_historical_behavior() {
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (4, 7)),
+            (2, (6, 9)),
+            (3, (5, 8)),
+        ]);
+
+        let expected: Object =
+            std::collections::BTreeSet::from([
+                (1, (0, 0)),
+                (2, (2, 2)),
+                (3, (1, 1)),
+            ]);
+
+        assert_eq!(
+            normalize_object(object),
+            expected,
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 7),
+                (6, 9),
+                (5, 8),
+            ]);
+
+        let expected_indices: Indices =
+            std::collections::BTreeSet::from([
+                (0, 0),
+                (2, 2),
+                (1, 1),
+            ]);
+
+        assert_eq!(
+            normalize_indices(indices),
+            expected_indices,
+        );
+
+        assert_eq!(
+            normalize_object(Object::new()),
+            Object::new(),
+        );
+    }
+
+    #[test]
+    fn height_matches_historical_behavior() {
+        let grid: Grid = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+            vec![7, 8, 9],
+        ];
+
+        assert_eq!(height_grid(grid), 3);
+
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (2, 7)),
+            (2, (4, 5)),
+            (3, (3, 9)),
+        ]);
+
+        assert_eq!(height_object(object), 3);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (2, 7),
+                (4, 5),
+                (3, 9),
+            ]);
+
+        assert_eq!(height_indices(indices), 3);
+
+        assert_eq!(height_grid(Grid::new()), 0);
+    }
+
+    #[test]
+    fn width_matches_historical_behavior() {
+        let grid: Grid = vec![
+            vec![1, 2, 3, 4],
+            vec![5, 6, 7, 8],
+        ];
+
+        assert_eq!(width_grid(grid), 4);
+
+        let object: Object = std::collections::BTreeSet::from([
+            (1, (2, 7)),
+            (2, (4, 5)),
+            (3, (3, 9)),
+        ]);
+
+        assert_eq!(width_object(object), 5);
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (2, 7),
+                (4, 5),
+                (3, 9),
+            ]);
+
+        assert_eq!(width_indices(indices), 5);
+    }
+
+    #[test]
+    fn hperiod_matches_historical_behavior() {
+        let periodic: Object =
+            std::collections::BTreeSet::from([
+                (1, (0, 0)),
+                (1, (0, 2)),
+            ]);
+
+        assert_eq!(hperiod(periodic), 2);
+
+        let non_periodic: Object =
+            std::collections::BTreeSet::from([
+                (1, (0, 0)),
+                (1, (0, 3)),
+            ]);
+
+        assert_eq!(hperiod(non_periodic), 3);
+    }
+
+    #[test]
+    fn vperiod_matches_historical_behavior() {
+        let periodic: Object =
+            std::collections::BTreeSet::from([
+                (1, (0, 0)),
+                (1, (2, 0)),
+            ]);
+
+        assert_eq!(vperiod(periodic), 2);
+
+        let non_periodic: Object =
+            std::collections::BTreeSet::from([
+                (1, (0, 0)),
+                (1, (3, 0)),
+            ]);
+
+        assert_eq!(vperiod(non_periodic), 3);
+    }
+
+    #[test]
+    fn ulcorner_matches_historical_behavior() {
+        let object: Object =
+            std::collections::BTreeSet::from([
+                (1, (4, 7)),
+                (2, (2, 5)),
+                (3, (6, 9)),
+            ]);
+
+        assert_eq!(
+            ulcorner_object(object),
+            (2, 5),
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 7),
+                (2, 5),
+                (6, 9),
+            ]);
+
+        assert_eq!(
+            ulcorner_indices(indices),
+            (2, 5),
+        );
+    }
+
+    #[test]
+    fn urcorner_matches_historical_behavior() {
+        let object: Object =
+            std::collections::BTreeSet::from([
+                (1, (4, 7)),
+                (2, (2, 5)),
+                (3, (6, 9)),
+            ]);
+
+        assert_eq!(
+            urcorner_object(object),
+            (2, 9),
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 7),
+                (2, 5),
+                (6, 9),
+            ]);
+
+        assert_eq!(
+            urcorner_indices(indices),
+            (2, 9),
+        );
+    }
+
+    #[test]
+    fn llcorner_matches_historical_behavior() {
+        let object: Object =
+            std::collections::BTreeSet::from([
+                (1, (4, 7)),
+                (2, (2, 5)),
+                (3, (6, 9)),
+            ]);
+
+        assert_eq!(
+            llcorner_object(object),
+            (6, 5),
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 7),
+                (2, 5),
+                (6, 9),
+            ]);
+
+        assert_eq!(
+            llcorner_indices(indices),
+            (6, 5),
+        );
+    }
+
+    #[test]
+    fn lrcorner_matches_historical_behavior() {
+        let object: Object =
+            std::collections::BTreeSet::from([
+                (1, (4, 7)),
+                (2, (2, 5)),
+                (3, (6, 9)),
+            ]);
+
+        assert_eq!(
+            lrcorner_object(object),
+            (6, 9),
+        );
+
+        let indices: Indices =
+            std::collections::BTreeSet::from([
+                (4, 7),
+                (2, 5),
+                (6, 9),
+            ]);
+
+        assert_eq!(
+            lrcorner_indices(indices),
+            (6, 9),
+        );
+    }
+
+    #[test]
+    fn rot90_matches_historical_behavior() {
+        let grid = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        ];
+
+        assert_eq!(
+            rot90(grid),
+            vec![
+                vec![4, 1],
+                vec![5, 2],
+                vec![6, 3],
+            ],
+        );
+
+        let square = vec![
+            vec![1, 2],
+            vec![3, 4],
+        ];
+
+        assert_eq!(
+            rot90(square),
+            vec![
+                vec![3, 1],
+                vec![4, 2],
+            ],
+        );
+    }
+
+    #[test]
+    fn rot180_matches_historical_behavior() {
+        let grid = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        ];
+
+        assert_eq!(
+            rot180(grid),
+            vec![
+                vec![6, 5, 4],
+                vec![3, 2, 1],
+            ],
+        );
+
+        let square = vec![
+            vec![1, 2],
+            vec![3, 4],
+        ];
+
+        assert_eq!(
+            rot180(square),
+            vec![
+                vec![4, 3],
+                vec![2, 1],
+            ],
+        );
+    }
+
+    #[test]
+    fn rot270_matches_historical_behavior() {
+        let grid = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        ];
+
+        assert_eq!(
+            rot270(grid),
+            vec![
+                vec![3, 6],
+                vec![2, 5],
+                vec![1, 4],
+            ],
+        );
+
+        let square = vec![
+            vec![1, 2],
+            vec![3, 4],
+        ];
+
+        assert_eq!(
+            rot270(square),
+            vec![
+                vec![2, 4],
+                vec![1, 3],
+            ],
+        );
     }
 }
