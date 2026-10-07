@@ -29,6 +29,11 @@ fn main() {
         );
     }
 
+    println!(
+        "Registered function types: {}",
+        function_types.all_types().count()
+    );
+
     for (id, function_type) in function_types.all_types() {
         println!(
             "{:?}: {:?} -> {:?}",
@@ -62,12 +67,4 @@ fn main() {
             entry.connection.expression()
         );
     }
-
-    let function_types =
-        crate::registry::FunctionTypeRegistry::new();
-
-    println!(
-        "Function types: {}",
-        function_types.all_types().count()
-    );
 }
