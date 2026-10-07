@@ -1,9 +1,154 @@
 use linkme::distributed_slice;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::connection::Connection;
-use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
+use crate::types::*;
 use crate::function::Function;
+
+#[distributed_slice(PRIMITIVES)]
+static EQUALITY_CALLABLE: PrimitiveEntry = PrimitiveEntry {
+    name: "equality",
+    inputs: &[],
+    output: Type::Callable,
+    apply: |arguments| {
+        Err(format!(
+            "cannot directly execute generic equality with arguments: {:?}",
+            arguments
+        ))
+    },
+};
+
+fn identity_callable_apply(
+    values: &[Value],
+) -> Result<Value, String> {
+    if values.len() != 1 {
+        return Err(
+            "identity expects one argument".to_string()
+        );
+    }
+
+    Ok(values[0].clone())
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static identity_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "identity",
+        inputs: &[],
+        output: Type::Callable,
+        apply: identity_callable_apply,
+    };
+
+fn add_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(&add_callable_entry),
+    )))
+}
+
+fn subtract_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(
+            &subtract_callable_entry,
+        ),
+    )))
+}
+
+fn multiply_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(
+            &multiply_callable_entry,
+        ),
+    )))
+}
+
+fn divide_callable_apply(
+    _values: &[Value],
+) -> Result<Value, String> {
+    Ok(Value::Function(Box::new(
+        Function::primitive_family(
+            &divide_callable_entry,
+        ),
+    )))
+}
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static subtract_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "subtract",
+        inputs: &[],
+        output: Type::Callable,
+        apply: subtract_callable_apply,
+    };
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static multiply_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "multiply",
+        inputs: &[],
+        output: Type::Callable,
+        apply: multiply_callable_apply,
+    };
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static divide_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "divide",
+        inputs: &[],
+        output: Type::Callable,
+        apply: divide_callable_apply,
+    };
+
+#[linkme::distributed_slice(PRIMITIVES)]
+#[allow(non_upper_case_globals)]
+pub static add_callable_entry: PrimitiveEntry =
+    PrimitiveEntry {
+        name: "add",
+        inputs: &[],
+        output: Type::Callable,
+        apply: add_callable_apply,
+    };
+
+pub fn apply_primitive_family(
+    name: &str,
+    arguments: &[Value],
+) -> Result<Value, String> {
+    for primitive in primitives_by_name(name) {
+        let input_types = arguments
+            .iter()
+            .map(Value::output_type)
+            .collect::<Vec<_>>();
+
+        if !primitive.accepts(&input_types) {
+            continue;
+        }
+
+        return (primitive.apply)(arguments);
+    }
+
+    Err(format!(
+        "no overload of '{}' accepts the given arguments",
+        name
+    ))
+}
+
+pub fn primitives_by_name(
+    name: &str,
+) -> Vec<&'static PrimitiveEntry> {
+    PRIMITIVES
+        .iter()
+        .filter(|primitive| primitive.name == name)
+        .collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DynamicPrimitive {
@@ -97,6 +242,150 @@ pub fn apply_values(
     };
 
     function.apply_values(arguments)
+}
+
+pub fn map_apply_value(
+    function: &Value,
+    container: &Value,
+) -> Result<Value, String> {
+    if let Value::IntegerTuple((a, b)) = container {
+        let first = apply_value(
+            function,
+            &Value::Integer(*a),
+        )?;
+
+        let second = apply_value(
+            function,
+            &Value::Integer(*b),
+        )?;
+
+        let first = Integer::from_value(&first)?;
+        let second = Integer::from_value(&second)?;
+
+        return Ok(Value::IntegerVector(vec![
+            first,
+            second,
+        ]));
+    }
+
+    if let Value::IntegerVector(values) = container {
+        let mut result = Vec::with_capacity(values.len());
+
+        for value in values {
+            let mapped = apply_value(
+                function,
+                &Value::Integer(*value),
+            )?;
+
+            result.push(Integer::from_value(&mapped)?);
+        }
+
+        return Ok(Value::IntegerVector(result));
+    }
+
+    if let Value::GridVector(values) = container {
+        let mut integers = Vec::with_capacity(values.len());
+        let mut grids = Vec::with_capacity(values.len());
+
+        for value in values {
+            let mapped = apply_value(
+                function,
+                &Value::Grid(value.clone()),
+            )?;
+
+            match mapped {
+                Value::Integer(value) => {
+                    integers.push(value);
+                }
+
+                Value::Grid(value) => {
+                    grids.push(value);
+                }
+
+                other => {
+                    return Err(format!(
+                        "historical apply: unsupported mapped output {:?}",
+                        other
+                    ));
+                }
+            }
+        }
+
+        if integers.len() == values.len() {
+            return Ok(Value::IntegerVector(integers));
+        }
+
+        if grids.len() == values.len() {
+            return Ok(Value::GridVector(grids));
+        }
+
+        return Err(
+            "historical apply: mixed mapped output types"
+                .to_string(),
+        );
+    }
+
+    if let Value::ObjectVector(values) = container {
+        let mut result = Vec::with_capacity(values.len());
+
+        for value in values {
+            let mapped = apply_value(
+                function,
+                &Value::Object(value.clone()),
+            )?;
+
+            result.push(Object::from_value(&mapped)?);
+        }
+
+        return Ok(Value::ObjectVector(result));
+    }
+
+    if let Value::Objects(values) = container {
+        let mut objects = BTreeSet::new();
+        let mut integers = Vec::with_capacity(values.len());
+
+        for value in values {
+            let mapped = apply_value(
+                function,
+                &Value::Object(value.clone()),
+            )?;
+
+            match mapped {
+                Value::Object(value) => {
+                    objects.insert(value);
+                }
+
+                Value::Integer(value) => {
+                    integers.push(value);
+                }
+
+                other => {
+                    return Err(format!(
+                        "historical apply: unsupported mapped output {:?}",
+                        other
+                    ));
+                }
+            }
+        }
+
+        if objects.len() == values.len() {
+            return Ok(Value::Objects(objects));
+        }
+
+        if integers.len() == values.len() {
+            return Ok(Value::IntegerVector(integers));
+        }
+
+        return Err(
+            "historical apply: mixed mapped output types"
+                .to_string(),
+        );
+    }
+
+    Err(
+        "historical apply: unsupported container"
+            .to_string(),
+    )
 }
 
 #[derive(Debug, Default)]
@@ -259,6 +548,11 @@ impl FunctionTypeRegistry {
     ) -> Result<Type, String> {
         let id = match function_type {
             Type::Function(id) => id,
+
+            Type::Callable => {
+                return Ok(Type::Callable);
+            }
+
             other => {
                 return Err(format!(
                     "apply expects a function, got {:?}",
@@ -293,9 +587,7 @@ impl FunctionTypeRegistry {
 
         Ok(function.output)
     }
-}
 
-impl FunctionTypeRegistry {
     pub fn function_type(
         &self,
         ty: Type,
@@ -305,9 +597,7 @@ impl FunctionTypeRegistry {
             _ => None,
         }
     }
-}
 
-impl FunctionTypeRegistry {
     pub fn new() -> Self {
         Self::default()
     }
@@ -339,6 +629,24 @@ impl FunctionTypeRegistry {
         id: FunctionTypeId,
     ) -> Option<&FunctionType> {
         self.types.get(id.0 as usize)
+    }
+
+
+    pub fn apply_callable_family(
+        &mut self,
+        name: &str,
+        arguments: &[Type],
+    ) -> Result<Type, String> {
+        for primitive in crate::registry::primitives_by_name(name) {
+            if primitive.accepts(arguments) {
+                return Ok(primitive.output);
+            }
+        }
+
+        Err(format!(
+            "no overload of '{}' accepts the given arguments",
+            name
+        ))
     }
 }
 
@@ -455,11 +763,87 @@ impl IntoValue for Function {
     }
 }
 
+impl FromValue for IntegerVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::IntegerVector(value) => Ok(value.clone()),
+            _ => Err("expected IntegerVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for IntegerVector {
+    fn into_value(self) -> Value {
+        Value::IntegerVector(self)
+    }
+}
+
+impl FromValue for GridVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::GridVector(value) => Ok(value.clone()),
+            _ => Err("expected GridVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for GridVector {
+    fn into_value(self) -> Value {
+        Value::GridVector(self)
+    }
+}
+
+impl FromValue for TupleVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::TupleVector(value) => Ok(value.clone()),
+            _ => Err("expected TupleVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for TupleVector {
+    fn into_value(self) -> Value {
+        Value::TupleVector(self)
+    }
+}
+
+impl FromValue for ObjectVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::ObjectVector(value) => Ok(value.clone()),
+            _ => Err("expected ObjectVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for ObjectVector {
+    fn into_value(self) -> Value {
+        Value::ObjectVector(self)
+    }
+}
+
+impl FromValue for Objects {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Objects(value) => Ok(value.clone()),
+            _ => Err("expected Objects".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Objects {
+    fn into_value(self) -> Value {
+        Value::Objects(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     pub inputs: Vec<Type>,
     pub output: Type,
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FunctionTypeId(u32);
 
@@ -471,9 +855,14 @@ pub enum Type {
     IntegerTuple,
     Indices,
     Object,
+    IntegerVector,
+    GridVector,
+    TupleVector,
     Function(FunctionTypeId),
+    Callable,
+    ObjectVector,
+    Objects,
 }
-
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -484,6 +873,11 @@ pub enum Value {
     Indices(Indices),
     Object(Object),
     Function(Box<Function>),
+    IntegerVector(IntegerVector),
+    GridVector(GridVector),
+    TupleVector(TupleVector),
+    ObjectVector(ObjectVector),
+    Objects(Objects),
 }
 
 #[derive(Debug)]
@@ -537,7 +931,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 36);
+        assert_eq!(PRIMITIVES.len(), 51);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -2429,5 +2823,610 @@ mod tests
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn primitives_by_name_finds_all_add_overloads() {
+        let primitives = primitives_by_name("add");
+
+        assert_eq!(primitives.len(), 5);
+
+        assert_eq!(
+            primitives
+                .iter()
+                .filter(|entry| {
+                    entry.output == Type::Callable
+                })
+                .count(),
+            1
+        );
+
+        assert!(primitives.iter().all(|primitive| {
+            primitive.name == "add"
+        }));
+    }
+
+    #[test]
+    fn apply_primitive_family_dispatches_add_integer() {
+        let result = apply_primitive_family(
+            "add",
+            &[
+                Value::Integer(2),
+                Value::Integer(3),
+            ],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn apply_primitive_family_rejects_wrong_arguments() {
+        let result = apply_primitive_family(
+            "add",
+            &[
+                Value::Boolean(true),
+                Value::Integer(3),
+            ],
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lbind_primitive_family_should_bind_left_argument() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .unwrap();
+
+        let result = apply_values(
+            &bound,
+            vec![Value::Integer(3)],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn rbind_primitive_family_should_bind_right_argument() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let bound = rbind_value(
+            &function,
+            &Value::Integer(3),
+        )
+        .unwrap();
+
+        let result = apply_values(
+            &bound,
+            vec![Value::Integer(2)],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn bound_primitive_family_can_be_bound_again() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let left_bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .unwrap();
+
+        let right_bound = rbind_value(
+            &left_bound,
+            &Value::Integer(3),
+        )
+        .unwrap();
+
+        let result = apply_values(
+            &right_bound,
+            vec![],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn bound_primitive_family_can_be_bound_in_reverse_order() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let right_bound = rbind_value(
+            &function,
+            &Value::Integer(3),
+        )
+        .unwrap();
+
+        let left_bound = lbind_value(
+            &right_bound,
+            &Value::Integer(2),
+        )
+        .unwrap();
+
+        let result = apply_values(
+            &left_bound,
+            vec![],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn apply_primitive_family_applies_arguments() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let result = apply_values(
+            &function,
+            vec![
+                Value::Integer(2),
+                Value::Integer(3),
+            ],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn apply_bound_primitive_family() {
+        let connection =
+            crate::connection::Connection::callable_primitive(
+                &crate::primitives::add_entry,
+            );
+
+        let environment =
+            crate::environment::InputEnvironment::new();
+
+        let function = connection
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let bound = lbind_value(
+            &function,
+            &Value::Integer(2),
+        )
+        .unwrap();
+
+        let result = apply_values(
+            &bound,
+            vec![Value::Integer(3)],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn callable_can_apply_integer() {
+        let registry =
+            FunctionTypeRegistry::new();
+
+        let result = registry.apply_type(
+            Type::Callable,
+            &[Type::Integer],
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn callable_apply_integer_can_resolve_known_function_type() {
+        let mut registry =
+            FunctionTypeRegistry::new();
+
+        let integer_to_integer =
+            registry.type_of(
+                &[Type::Integer],
+                Type::Integer,
+            );
+
+        let result = registry.apply_type(
+            integer_to_integer,
+            &[Type::Integer],
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            Type::Integer
+        );
+    }
+
+    #[test]
+    fn add_family_contains_integer_integer_signature() {
+        let entries =
+            crate::registry::primitives_by_name("add");
+
+        assert!(entries.iter().any(|entry| {
+            entry.inputs == &[Type::Integer, Type::Integer]
+                && entry.output == Type::Integer
+        }));
+    }
+
+    #[test]
+    fn apply_callable_family_resolves_add() {
+        let mut registry =
+            FunctionTypeRegistry::new();
+
+        let output = registry
+            .apply_callable_family(
+                "add",
+                &[Type::Integer, Type::Integer],
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            Type::Integer
+        );
+    }
+
+    #[test]
+    fn historical_apply_integer_tuple_to_integer_vector() {
+        let function = Value::Function(Box::new(
+            Function::primitive_family(
+                crate::registry::primitives_by_name("add")
+                    .into_iter()
+                    .find(|primitive| {
+                        primitive.inputs
+                            == &[Type::Integer, Type::Integer]
+                            && primitive.output
+                                == Type::Integer
+                    })
+                    .expect("expected integer add"),
+            ),
+        ));
+
+        let result = map_apply_value(
+            &function,
+            &Value::IntegerTuple((2, 3)),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn historical_apply_maps_identity_over_integer_tuple() {
+        let function = Value::Function(Box::new(
+            Function::primitive_family(
+                &identity_callable_entry,
+            ),
+        ));
+
+        let container =
+            Value::IntegerTuple((2, 3));
+
+        let result = map_apply_value(
+            &function,
+            &container,
+        )
+        .expect("expected historical apply");
+
+        assert!(matches!(
+            result,
+            Value::IntegerVector(values)
+                if values == vec![2, 3]
+        ));
+    }
+
+    #[test]
+    fn historical_apply_maps_identity_over_integer_vector() {
+        let function = Value::Function(Box::new(
+            Function::primitive_family(
+                &identity_callable_entry,
+            ),
+        ));
+
+        let container =
+            Value::IntegerVector(vec![2, 3, 4]);
+
+        let result = map_apply_value(
+            &function,
+            &container,
+        )
+        .expect("expected historical apply");
+
+        assert!(matches!(
+            result,
+            Value::IntegerVector(values)
+                if values == vec![2, 3, 4]
+        ));
+    }
+
+    #[test]
+    fn historical_apply_maps_hmirror_over_grid_vector() {
+        let primitive = primitives_by_name("hmirror")
+            .into_iter()
+            .find(|primitive| {
+                primitive.inputs == &[Type::Grid]
+                    && primitive.output == Type::Grid
+            })
+            .expect("expected hmirror(Grid) primitive");
+
+        let function = Value::Function(Box::new(
+            Function::primitive_family(primitive),
+        ));
+
+        let grid1 = vec![
+            vec![1, 2],
+            vec![3, 4],
+        ];
+
+        let grid2 = vec![
+            vec![5, 6, 7],
+            vec![8, 9, 10],
+        ];
+
+        let container = Value::GridVector(vec![
+            grid1,
+            grid2,
+        ]);
+
+        let result = map_apply_value(
+            &function,
+            &container,
+        )
+        .expect("expected historical apply");
+
+        assert!(matches!(
+            result,
+            Value::GridVector(values)
+                if values.len() == 2
+        ));
+    }
+
+    #[test]
+    fn historical_apply_maps_hmirror_over_object_vector() {
+        let primitive = crate::registry::PRIMITIVES
+            .iter()
+            .find(|primitive| {
+                primitive.name == "hmirror"
+                    && primitive.inputs == &[Type::Object]
+                    && primitive.output == Type::Object
+            })
+            .expect("expected hmirror(Object) primitive");
+
+        let function =
+            Value::Function(Box::new(Function::primitive_family(
+                primitive,
+            )));
+
+        let object1: Object = BTreeSet::from([
+            (1, (2, 3)),
+            (2, (4, 5)),
+        ]);
+
+        let object2: Object = BTreeSet::from([
+            (3, (1, 2)),
+            (4, (5, 6)),
+        ]);
+
+        let container =
+            Value::ObjectVector(vec![object1, object2]);
+
+        let result =
+            map_apply_value(&function, &container)
+                .expect("historical apply should succeed");
+
+        match result {
+            Value::ObjectVector(values) => {
+                assert_eq!(values.len(), 2);
+
+                assert_eq!(
+                    values[0],
+                    BTreeSet::from([
+                        (1, (4, 3)),
+                        (2, (2, 5)),
+                    ])
+                );
+
+                assert_eq!(
+                    values[1],
+                    BTreeSet::from([
+                        (3, (5, 2)),
+                        (4, (1, 6)),
+                    ])
+                );
+            }
+
+            other => {
+                panic!(
+                    "expected ObjectVector, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn historical_apply_maps_hmirror_over_objects() {
+        let primitive = crate::registry::PRIMITIVES
+            .iter()
+            .find(|primitive| {
+                primitive.name == "hmirror"
+                    && primitive.inputs == &[Type::Object]
+                    && primitive.output == Type::Object
+            })
+            .expect("expected hmirror(Object) primitive");
+
+        let function =
+            Value::Function(Box::new(Function::primitive_family(
+                primitive,
+            )));
+
+        let object1: Object = BTreeSet::from([
+            (1, (2, 3)),
+            (2, (4, 5)),
+        ]);
+
+        let object2: Object = BTreeSet::from([
+            (3, (1, 2)),
+            (4, (5, 6)),
+        ]);
+
+        let container = Value::Objects(BTreeSet::from([
+            object1,
+            object2,
+        ]));
+
+        let result =
+            map_apply_value(&function, &container)
+                .expect("historical apply should succeed");
+
+        match result {
+            Value::Objects(values) => {
+                assert_eq!(values.len(), 2);
+
+                assert!(
+                    values.contains(&BTreeSet::from([
+                        (1, (4, 3)),
+                        (2, (2, 5)),
+                    ]))
+                );
+
+                assert!(
+                    values.contains(&BTreeSet::from([
+                        (3, (5, 2)),
+                        (4, (1, 6)),
+                    ]))
+                );
+            }
+
+            other => {
+                panic!(
+                    "expected Objects, got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn historical_apply_color_over_objects() {
+        let primitive = crate::registry::PRIMITIVES
+            .iter()
+            .find(|primitive| {
+                primitive.name == "color"
+                    && primitive.inputs == &[Type::Object]
+                    && primitive.output == Type::Integer
+            })
+            .expect("expected color(Object) primitive");
+
+        let function =
+            Value::Function(Box::new(Function::primitive_family(
+                primitive,
+            )));
+
+        let object1: Object = BTreeSet::from([
+            (3, (4, 5)),
+            (7, (1, 2)),
+        ]);
+
+        let object2: Object = BTreeSet::from([
+            (5, (2, 3)),
+            (8, (4, 6)),
+        ]);
+
+        let container = Value::Objects(BTreeSet::from([
+            object1,
+            object2,
+        ]));
+
+        let result =
+            map_apply_value(&function, &container)
+                .expect("historical apply should succeed");
+
+        match result {
+            Value::IntegerVector(values) => {
+                assert_eq!(values, vec![3, 5]);
+            }
+
+            other => {
+                panic!(
+                    "expected IntegerVector, got {:?}",
+                    other
+                );
+            }
+        }
     }
 }
