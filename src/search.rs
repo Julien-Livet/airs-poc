@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 const CORPUS_BATCH_SIZE: usize = 32;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CorpusEntryJson {
+pub struct CorpusEntryJson {
     input: Grid,
     connection: ConnectionJson,
 }
 
 impl CorpusEntry {
-    fn to_json(&self) -> Result<CorpusEntryJson, String> {
+    pub fn to_json(&self) -> Result<CorpusEntryJson, String> {
         Ok(CorpusEntryJson {
             input: self.input.clone(),
             connection: self.connection.to_json()?,
