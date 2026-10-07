@@ -8,10 +8,38 @@ mod signature;
 mod function;
 
 use crate::registry::Type;
-use crate::search::generate_corpus_parallel;
+use crate::search::{generate_corpus_parallel, CorpusEntry};
 use crate::signature::InputSpec;
+use std::fs;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(name = "airs-poc")]
+struct Args {
+    /// Maximum depth of generated expressions
+    #[arg(long, default_value_t = 10)]
+    depth: usize,
+
+    /// Number of corpus entries to generate
+    #[arg(long, default_value_t = 1000)]
+    count: usize,
+
+    /// Number of trials
+    #[arg(long, default_value_t = 100)]
+    trials: usize,
+
+    /// Number of max_attempts
+    #[arg(long, default_value_t = 5000)]
+    max_attempts: usize,
+
+    #[arg(long, default_value = "dsl_dataset")]
+    output: String,
+}
 
 fn main() {
+    let args = Args::parse();
+
     let inputs = vec![
         InputSpec {
             name: "I".to_string(),
@@ -19,51 +47,35 @@ fn main() {
         },
     ];
 
-    let mut function_types =
-        crate::registry::FunctionTypeRegistry::new();
-
-    for primitive in crate::registry::PRIMITIVES {
-        function_types.type_of(
-            primitive.inputs,
-            primitive.output,
-        );
-    }
-
-    println!(
-        "Registered function types: {}",
-        function_types.all_types().count()
-    );
-
-    for (id, function_type) in function_types.all_types() {
-        println!(
-            "{:?}: {:?} -> {:?}",
-            id,
-            function_type.inputs,
-            function_type.output,
-        );
-    }
-
     let mut rng = rand::rng();
 
     let corpus = generate_corpus_parallel(
-        4,
-        1000,
+        args.depth,
+        args.count,
         &inputs,
         &mut rng,
-        100,
-        5000,
+        args.trials,
+        args.max_attempts,
     )
     .unwrap();
 
-    println!(
-        "Random corpus: {} entries",
-        corpus.len()
-    );
+     let json = corpus
+        .iter()
+        .map(CorpusEntry::to_json)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("expected JSON representations");
 
-    for (index, entry) in corpus.iter().enumerate() {
+    let text = serde_json::to_string_pretty(&json)
+        .expect("expected JSON serialization");
+
+    let filename = format!("{}_depth{}_{}programs.json", args.output, args.depth, args.count);
+
+    fs::write(filename, text)
+        .expect("failed to write corpus.json");
+
+    for (_index, entry) in corpus.iter().enumerate() {
         println!(
-            "{}: {}",
-            index + 1,
+            "{}",
             entry.connection.expression()
         );
     }
