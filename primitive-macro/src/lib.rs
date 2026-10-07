@@ -221,6 +221,26 @@ fn type_tokens(
             crate::registry::Type::Indices
         },
 
+        "Objects" => quote! {
+            crate::registry::Type::Objects
+        },
+
+        "IntegerVector" => quote! {
+            crate::registry::Type::IntegerVector
+        },
+
+        "GridVector" => quote! {
+            crate::registry::Type::GridVector
+        },
+
+        "TupleVector" => quote! {
+            crate::registry::Type::TupleVector
+        },
+
+        "ObjectVector" => quote! {
+            crate::registry::Type::ObjectVector
+        },
+
         other => {
             return Err(syn::Error::new_spanned(
                 &segment.ident,
