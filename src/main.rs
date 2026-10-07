@@ -18,7 +18,7 @@ use clap::Parser;
 #[command(name = "airs-poc")]
 struct Args {
     /// Maximum depth of generated expressions
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 4)]
     depth: usize,
 
     /// Number of corpus entries to generate
@@ -71,12 +71,21 @@ fn main() {
     let filename = format!("{}_depth{}_{}programs.json", args.output, args.depth, args.count);
 
     fs::write(filename, text)
-        .expect("failed to write corpus.json");
+        .expect("failed to write json");
 
-    for (_index, entry) in corpus.iter().enumerate() {
-        println!(
-            "{}",
-            entry.connection.expression()
-        );
-    }
+    let mut expressions: Vec<String> = corpus
+        .iter()
+        .map(|entry| entry.connection.expression())
+        .collect();
+
+    expressions.sort();
+
+    let text = expressions.join("\n");
+
+    let filename = format!("{}_depth{}_{}programs.txt", args.output, args.depth, args.count);
+
+    fs::write(filename, text)
+        .expect("failed to write txt");
+
+    println!("Saved {} generated entries", corpus.len());
 }
