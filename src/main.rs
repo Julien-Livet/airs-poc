@@ -7,36 +7,11 @@ mod environment;
 mod signature;
 mod function;
 
-use crate::connection::{Dataset, NamedTerminal};
-use crate::registry::{Type, Value};
-use crate::search::{generate, semantic_signature};
+use crate::registry::Type;
+use crate::search::generate_corpus_parallel;
 use crate::signature::InputSpec;
 
 fn main() {
-    let terminals = connection::Terminals {
-        values: vec![
-            NamedTerminal::new("ONE", Value::Integer(1)),
-            NamedTerminal::new("TWO", Value::Integer(2)),
-            NamedTerminal::new("THREE", Value::Integer(3)),
-        ],
-    };
-
-    let dataset = Dataset::from_grids(vec![
-            vec![
-                vec![1, 2, 3],
-                vec![4, 5, 6],
-            ],
-            vec![
-                vec![7, 8],
-                vec![9, 0],
-            ],
-            vec![
-                vec![1, 0, 1],
-                vec![0, 1, 1],
-            ],
-        ],
-    );
-
     let inputs = vec![
         InputSpec {
             name: "I".to_string(),
@@ -47,54 +22,52 @@ fn main() {
     let mut function_types =
         crate::registry::FunctionTypeRegistry::new();
 
-    for depth in 0..=4 {
-        let programs = generate(
-            registry::Type::Grid,
-            depth,
-            &terminals,
-            &inputs,
-            &mut function_types,
-        );
-
-        println!(
-            "Grid depth {}: {} programs",
-            depth,
-            programs.len()
+    for primitive in crate::registry::PRIMITIVES {
+        function_types.type_of(
+            primitive.inputs,
+            primitive.output,
         );
     }
 
-    use std::collections::BTreeMap;
+    for (id, function_type) in function_types.all_types() {
+        println!(
+            "{:?}: {:?} -> {:?}",
+            id,
+            function_type.inputs,
+            function_type.output,
+        );
+    }
 
-    let programs = generate(
-        registry::Type::Grid,
+    let mut rng = rand::rng();
+
+    let corpus = generate_corpus_parallel(
         4,
-        &terminals,
+        1000,
         &inputs,
-        &mut function_types,
+        &mut rng,
+        100,
+        5000,
+    )
+    .unwrap();
+
+    println!(
+        "Random corpus: {} entries",
+        corpus.len()
     );
 
-    let mut classes: BTreeMap<Vec<Vec<Vec<i16>>>, Vec<String>> = BTreeMap::new();
-
-    for program in &programs {
-        let signature = semantic_signature(
-            program,
-            &dataset.environments,
-        )
-        .unwrap();
-
-        classes
-            .entry(signature)
-            .or_default()
-            .push(program.expression());
+    for (index, entry) in corpus.iter().enumerate() {
+        println!(
+            "{}: {}",
+            index + 1,
+            entry.connection.expression()
+        );
     }
 
-    println!("Semantic classes: {}", classes.len());
+    let function_types =
+        crate::registry::FunctionTypeRegistry::new();
 
-    for (i, (_, expressions)) in classes.iter().enumerate() {
-        println!("Class {}: {} programs", i + 1, expressions.len());
-
-        for expression in expressions {
-            println!("  {}", expression);
-        }
-    }
+    println!(
+        "Function types: {}",
+        function_types.all_types().count()
+    );
 }
