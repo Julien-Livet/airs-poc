@@ -9,6 +9,17 @@ use rand::RngExt;
 
 const CORPUS_BATCH_SIZE: usize = 32;
 
+fn register_primitive_function_types(
+    function_types: &mut FunctionTypeRegistry,
+) {
+    for primitive in crate::registry::PRIMITIVES {
+        function_types.type_of(
+            primitive.inputs,
+            primitive.output,
+        );
+    }
+}
+
 fn select_corpus_entries(
     entries: Vec<CorpusEntry>,
     count: usize,
@@ -61,7 +72,7 @@ fn corpus_entry_key(
     )
 }
 
-fn generate_corpus_parallel(
+pub fn generate_corpus_parallel(
     depth: usize,
     count: usize,
     inputs: &[InputSpec],
@@ -141,6 +152,14 @@ fn generate_corpus_entry(
     seed: u64,
     trials: usize,
 ) -> Option<CorpusEntry> {
+    register_primitive_function_types(
+        function_types,
+    );
+
+    for (id, function_type) in function_types.all_types() {
+        println!("{id:?}: {:?} -> {:?}", function_type.inputs, function_type.output);
+    }
+
     use rand::SeedableRng;
 
     let mut rng =
@@ -306,9 +325,9 @@ fn find_valid_grid(
 }
 
 #[derive(Debug)]
-struct CorpusEntry {
-    input: Grid,
-    connection: Connection,
+pub struct CorpusEntry {
+    pub input: Grid,
+    pub connection: Connection,
 }
 
 fn add_corpus_entry(
@@ -429,6 +448,10 @@ fn uses_input_i(connection: &Connection) -> bool {
         }
 
         Connection::Constant { .. } => false,
+
+        Connection::CallablePrimitive { .. } => {
+            todo!("CallablePrimitive generation is not implemented yet")
+        }
 
         Connection::Primitive { inputs, .. }
         | Connection::Dynamic { inputs, .. } => {
@@ -769,16 +792,28 @@ fn candidate_groups(
         groups.push(group);
     }
 
-    for (name, candidates) in
-        primitive_candidates_by_name(output_type)
-    {
-        if let Some(group) =
-            primitive_candidate_group(
-                name,
-                candidates,
-            )
+    if output_type == Type::Callable {
+        for name in callable_family_candidates() {
+            groups.push(CandidateGroup::Dynamic {
+                candidates: vec![
+                    DynamicCandidate::CallableFamily(name)
+                ],
+            });
+        }
+    }
+
+    if output_type != Type::Callable {
+        for (name, candidates) in
+            primitive_candidates_by_name(output_type)
         {
-            groups.push(group);
+            if let Some(group) =
+                primitive_candidate_group(
+                    name,
+                    candidates,
+                )
+            {
+                groups.push(group);
+            }
         }
     }
 
@@ -790,6 +825,7 @@ enum DynamicCandidate {
     Lbind(FunctionTypeId, Type),
     Rbind(FunctionTypeId, Type),
     Apply(FunctionTypeId),
+    CallableFamily(&'static str),
 }
 
 impl DynamicCandidate {
@@ -810,8 +846,20 @@ impl DynamicCandidate {
             Self::Lbind(..) => "lbind",
             Self::Rbind(..) => "rbind",
             Self::Apply(..) => "apply",
+            Self::CallableFamily(name) => name,
         }
     }
+}
+
+fn callable_family_candidates(
+) -> Vec<&'static str> {
+    crate::registry::PRIMITIVES
+        .iter()
+        .filter(|primitive| {
+            primitive.output == Type::Callable
+        })
+        .map(|primitive| primitive.name)
+        .collect()
 }
 
 fn apply_candidates(
@@ -1045,6 +1093,14 @@ fn try_dynamic_candidate(
                 function_types,
             )
             .ok()
+        }
+
+        DynamicCandidate::CallableFamily(name) => {
+            let primitive = crate::registry::primitives_by_name(name)
+                .into_iter()
+                .find(|primitive| primitive.output == Type::Callable)?;
+
+            Some(Connection::callable_primitive(primitive))
         }
     }
 }
@@ -1745,7 +1801,7 @@ pub fn semantic_signature(
 mod tests
 {
     use super::*;
-    use crate::NamedTerminal;
+    use crate::connection::NamedTerminal;
     use crate::function::Function;
     use rand::SeedableRng;
     use crate::registry::DynamicPrimitive;
@@ -3101,6 +3157,10 @@ mod tests
         match connection {
             Connection::Input { .. }
             | Connection::Constant { .. } => 0,
+
+            Connection::CallablePrimitive { .. } => {
+                todo!("CallablePrimitive generation is not implemented yet")
+            }
 
             Connection::Primitive { inputs, .. }
             | Connection::Dynamic { inputs, .. } => {
@@ -5182,5 +5242,348 @@ mod tests
             );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn callable_family_candidates_include_add() {
+        let candidates = callable_family_candidates();
+
+        assert!(
+            candidates
+                .iter()
+                .any(|name| *name == "add")
+        );
+    }
+
+    #[test]
+    fn callable_family_candidates_are_unique() {
+        let candidates = callable_family_candidates();
+
+        let unique = candidates
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            candidates.len(),
+            unique.len()
+        );
+    }
+
+    #[test]
+    fn callable_family_candidate_builds_connection() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let candidate =
+            DynamicCandidate::CallableFamily("add");
+
+        let connection =
+            try_dynamic_candidate(
+                candidate,
+                1,
+                &[],
+                &mut function_types,
+                &mut rand::rngs::StdRng::seed_from_u64(42),
+            )
+            .expect("expected callable family connection");
+
+        assert!(matches!(
+            connection,
+            Connection::CallablePrimitive { primitive }
+                if primitive.name == "add"
+        ));
+    }
+
+    #[test]
+    fn callable_add_can_be_lbound_and_applied() {
+        let mut function_types =
+            FunctionTypeRegistry::new();
+
+        let add = Connection::callable_primitive(
+            crate::registry::primitives_by_name("add")
+                .into_iter()
+                .find(|primitive| {
+                    primitive.output == Type::Callable
+                })
+                .expect("expected callable add family"),
+        );
+
+        let fixed = Connection::Constant {
+            name: "2".to_string(),
+            value: Value::Integer(2),
+        };
+
+        let argument = Connection::Constant {
+            name: "3".to_string(),
+            value: Value::Integer(3),
+        };
+
+        let bound = Connection::lbind(
+            add,
+            fixed,
+            &mut function_types,
+        )
+        .expect("expected lbind");
+
+        let applied = Connection::apply(
+            bound,
+            vec![argument],
+            &mut function_types,
+        )
+        .expect("expected apply");
+
+        let environment =
+            InputEnvironment::new();
+
+        let result = applied
+            .output_with_inputs(&environment)
+            .expect("expected result");
+
+        assert!(matches!(
+            result,
+            Value::Integer(5)
+        ));
+    }
+
+    #[test]
+    fn callable_candidate_group_contains_add() {
+        let function_types =
+            FunctionTypeRegistry::new();
+
+        let groups = candidate_groups(
+            Type::Callable,
+            &function_types,
+        );
+
+        assert!(groups.iter().any(|group| {
+            matches!(
+                group,
+                CandidateGroup::Dynamic {
+                    candidates,
+                    ..
+                } if candidates.iter().any(|candidate| {
+                    matches!(
+                        candidate,
+                        DynamicCandidate::CallableFamily("add")
+                    )
+                })
+            )
+        }));
+    }
+
+    #[test]
+    fn build_connection_can_produce_callable() {
+        use rand::SeedableRng;
+
+        let inputs = Vec::new();
+
+        for seed in 0..100 {
+            let mut rng =
+                rand::rngs::StdRng::seed_from_u64(seed);
+
+            let mut function_types =
+                FunctionTypeRegistry::new();
+
+            if let Ok(connection) = build_connection(
+                Type::Callable,
+                1,
+                &inputs,
+                &mut function_types,
+                &mut rng,
+            ) {
+                assert!(matches!(
+                    connection,
+                    Connection::CallablePrimitive { .. }
+                ));
+
+                return;
+            }
+        }
+
+        panic!(
+            "could not build a Callable connection \
+            with any tested seed"
+        );
+    }
+
+    #[test]
+    fn built_callable_can_be_lbound_and_applied() {
+        use rand::SeedableRng;
+
+        for seed in 0..100 {
+            let mut rng =
+                rand::rngs::StdRng::seed_from_u64(seed);
+
+            let mut function_types =
+                FunctionTypeRegistry::new();
+
+            let Ok(connection) = build_connection(
+                Type::Callable,
+                1,
+                &[],
+                &mut function_types,
+                &mut rng,
+            ) else {
+                continue;
+            };
+
+            let fixed = Connection::Constant {
+                name: "2".to_string(),
+                value: Value::Integer(2),
+            };
+
+            let Ok(bound) = Connection::lbind(
+                connection,
+                fixed,
+                &mut function_types,
+            ) else {
+                continue;
+            };
+
+            let argument = Connection::Constant {
+                name: "3".to_string(),
+                value: Value::Integer(3),
+            };
+
+            let Ok(applied) = Connection::apply(
+                bound,
+                vec![argument],
+                &mut function_types,
+            ) else {
+                continue;
+            };
+
+            let Ok(result) = applied.output_with_inputs(
+                &InputEnvironment::new(),
+            ) else {
+                continue;
+            };
+
+            if matches!(result, Value::Integer(5)) {
+                return;
+            }
+        }
+
+        panic!(
+            "could not build and execute callable add"
+        );
+    }
+
+    #[test]
+    fn built_callable_can_be_rbound_and_applied() {
+        use rand::SeedableRng;
+
+        for seed in 0..100 {
+            let mut rng =
+                rand::rngs::StdRng::seed_from_u64(seed);
+
+            let mut function_types =
+                FunctionTypeRegistry::new();
+
+            let Ok(connection) = build_connection(
+                Type::Callable,
+                1,
+                &[],
+                &mut function_types,
+                &mut rng,
+            ) else {
+                continue;
+            };
+
+            let fixed = Connection::Constant {
+                name: "3".to_string(),
+                value: Value::Integer(3),
+            };
+
+            let Ok(bound) = Connection::rbind(
+                connection,
+                fixed,
+                &mut function_types,
+            ) else {
+                continue;
+            };
+
+            let argument = Connection::Constant {
+                name: "2".to_string(),
+                value: Value::Integer(2),
+            };
+
+            let Ok(applied) = Connection::apply(
+                bound,
+                vec![argument],
+                &mut function_types,
+            ) else {
+                continue;
+            };
+
+            let Ok(result) = applied.output_with_inputs(
+                &InputEnvironment::new(),
+            ) else {
+                continue;
+            };
+
+            if matches!(result, Value::Integer(5)) {
+                return;
+            }
+        }
+
+        panic!(
+            "could not build and execute callable add via rbind"
+        );
+    }
+
+    #[test]
+    fn built_callable_can_be_applied_with_two_arguments() {
+        use rand::SeedableRng;
+
+        for seed in 0..100 {
+            let mut rng =
+                rand::rngs::StdRng::seed_from_u64(seed);
+
+            let mut function_types =
+                FunctionTypeRegistry::new();
+
+            let Ok(connection) = build_connection(
+                Type::Callable,
+                1,
+                &[],
+                &mut function_types,
+                &mut rng,
+            ) else {
+                continue;
+            };
+
+            let argument1 = Connection::Constant {
+                name: "2".to_string(),
+                value: Value::Integer(2),
+            };
+
+            let argument2 = Connection::Constant {
+                name: "3".to_string(),
+                value: Value::Integer(3),
+            };
+
+            let Ok(applied) = Connection::apply(
+                connection,
+                vec![argument1, argument2],
+                &mut function_types,
+            ) else {
+                continue;
+            };
+
+            let Ok(result) = applied.output_with_inputs(
+                &InputEnvironment::new(),
+            ) else {
+                continue;
+            };
+
+            if matches!(result, Value::Integer(5)) {
+                return;
+            }
+        }
+
+        panic!(
+            "could not directly apply a generated binary callable"
+        );
     }
 }
