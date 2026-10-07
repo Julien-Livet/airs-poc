@@ -1,6 +1,11 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+#[primitive("identity")]
+fn identity_grid(value: Grid) -> Grid {
+    value
+}
+
 #[primitive("rot270")]
 pub fn rot270(
     grid: Grid,
@@ -475,7 +480,7 @@ pub fn toindices_indices(
 
 #[primitive("size")]
 pub fn size_integer_tuple(
-    value: IntegerTuple,
+    _value: IntegerTuple,
 ) -> Integer {
     2
 }
