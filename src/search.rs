@@ -1925,7 +1925,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 4);
+        assert_eq!(programs.len(), 8);
 
         assert!(
             programs.iter().any(|program| {
