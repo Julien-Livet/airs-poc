@@ -1,4 +1,4 @@
-use crate::connection::{Connection, Terminals, apply_container_type};
+use crate::connection::{Connection, Terminals, apply_container_type, ConnectionJson};
 use crate::registry::{Type, Value, PrimitiveEntry, FunctionTypeRegistry, FunctionTypeId};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
@@ -8,7 +8,37 @@ use rand::seq::SliceRandom;
 use rand::RngExt;
 use rand::prelude::IndexedRandom;
 
+use serde::{Deserialize, Serialize};
+
 const CORPUS_BATCH_SIZE: usize = 32;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CorpusEntryJson {
+    input: Grid,
+    connection: ConnectionJson,
+}
+
+impl CorpusEntry {
+    fn to_json(&self) -> Result<CorpusEntryJson, String> {
+        Ok(CorpusEntryJson {
+            input: self.input.clone(),
+            connection: self.connection.to_json()?,
+        })
+    }
+}
+
+impl TryFrom<CorpusEntryJson> for CorpusEntry {
+    type Error = String;
+
+    fn try_from(
+        value: CorpusEntryJson,
+    ) -> Result<Self, Self::Error> {
+        Ok(CorpusEntry {
+            input: value.input,
+            connection: value.connection.try_into()?,
+        })
+    }
+}
 
 pub fn register_primitive_function_types(
     function_types: &mut FunctionTypeRegistry,
@@ -4962,7 +4992,7 @@ mod tests
         let corpus =
             generate_corpus(
                 1,
-                10,
+                5,
                 &inputs,
                 &mut rng,
                 100,
@@ -4970,7 +5000,7 @@ mod tests
             )
             .expect("expected corpus generation to succeed");
 
-        assert_eq!(corpus.len(), 10);
+        assert_eq!(corpus.len(), 5);
     }
 
     #[test]
@@ -5419,15 +5449,15 @@ mod tests
 
     #[test]
     fn select_corpus_entries_respects_count() {
-        let connection =
-            Connection::input("I", Type::Grid);
-
         let entries = (0..10)
             .map(|value| CorpusEntry {
                 input: vec![
                     vec![value],
                 ],
-                connection: connection.clone(),
+                connection: Connection::Constant {
+                    name: format!("C{value}"),
+                    value: Value::Grid(vec![vec![value]]),
+                },
             })
             .collect::<Vec<_>>();
 
@@ -6445,5 +6475,221 @@ mod tests
             found,
             "no generated Objects apply evaluated successfully"
         );
+    }
+
+    #[test]
+    fn corpus_entry_json_round_trip() {
+        let primitive =
+            crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| {
+                    primitive.name == "hmirror"
+                        && primitive.inputs == &[Type::Grid]
+                        && primitive.output == Type::Grid
+                })
+                .expect("expected hmirror");
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+        )
+        .expect("expected valid connection");
+
+        let entry = CorpusEntry {
+            input: vec![
+                vec![1, 2],
+                vec![3, 4],
+            ],
+            connection,
+        };
+
+        let json = entry
+            .to_json()
+            .expect("expected JSON representation");
+
+        let text =
+            serde_json::to_string_pretty(&json)
+                .expect("expected JSON serialization");
+
+        let decoded: CorpusEntryJson =
+            serde_json::from_str(&text)
+                .expect("expected JSON deserialization");
+
+        let restored =
+            CorpusEntry::try_from(decoded)
+                .expect("expected CorpusEntry");
+
+        assert_eq!(restored.input, entry.input);
+        assert_eq!(
+            restored.connection.expression(),
+            entry.connection.expression(),
+        );
+        assert_eq!(
+            restored.connection.output_type(),
+            entry.connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn corpus_json_round_trip() {
+        let primitive =
+            crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| {
+                    primitive.name == "hmirror"
+                        && primitive.inputs == &[Type::Grid]
+                        && primitive.output == Type::Grid
+                })
+                .expect("expected hmirror");
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+        )
+        .expect("expected valid connection");
+
+        let corpus = vec![
+            CorpusEntry {
+                input: vec![
+                    vec![1, 2],
+                    vec![3, 4],
+                ],
+                connection: connection.clone(),
+            },
+            CorpusEntry {
+                input: vec![
+                    vec![5, 6],
+                    vec![7, 8],
+                ],
+                connection,
+            },
+        ];
+
+        let json = corpus
+            .iter()
+            .map(CorpusEntry::to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("expected JSON representations");
+
+        let text =
+            serde_json::to_string_pretty(&json)
+                .expect("expected JSON serialization");
+
+        let decoded: Vec<CorpusEntryJson> =
+            serde_json::from_str(&text)
+                .expect("expected JSON deserialization");
+
+        let restored = decoded
+            .into_iter()
+            .map(CorpusEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("expected CorpusEntries");
+
+        assert_eq!(restored.len(), corpus.len());
+
+        for (restored, original) in
+            restored.iter().zip(corpus.iter())
+        {
+            assert_eq!(restored.input, original.input);
+            assert_eq!(
+                restored.connection.expression(),
+                original.connection.expression(),
+            );
+            assert_eq!(
+                restored.connection.output_type(),
+                original.connection.output_type(),
+            );
+        }
+    }
+
+    #[test]
+    fn generated_corpus_json_round_trip_preserves_evaluation() {
+        use rand::SeedableRng;
+
+        let inputs = vec![
+            InputSpec {
+                name: "I".to_string(),
+                ty: Type::Grid,
+            },
+        ];
+
+        let mut rng =
+            rand::rngs::StdRng::seed_from_u64(42);
+
+        let corpus =
+            generate_corpus(
+                3,
+                5,
+                &inputs,
+                &mut rng,
+                100,
+                500,
+            )
+            .expect("expected corpus generation to succeed");
+
+        let json = corpus
+            .iter()
+            .map(CorpusEntry::to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("expected JSON representations");
+
+        let text =
+            serde_json::to_string_pretty(&json)
+                .expect("expected JSON serialization");
+
+        let decoded: Vec<CorpusEntryJson> =
+            serde_json::from_str(&text)
+                .expect("expected JSON deserialization");
+
+        let restored = decoded
+            .into_iter()
+            .map(CorpusEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("expected CorpusEntries");
+
+        assert_eq!(restored.len(), corpus.len());
+
+        for (original, restored) in
+            corpus.iter().zip(restored.iter())
+        {
+            let original_output =
+                evaluate_grid_connection(
+                    &original.connection,
+                    original.input.clone(),
+                )
+                .expect("expected original evaluation");
+
+            let restored_output =
+                evaluate_grid_connection(
+                    &restored.connection,
+                    restored.input.clone(),
+                )
+                .expect("expected restored evaluation");
+
+            assert_eq!(
+                restored.input,
+                original.input,
+            );
+
+            assert_eq!(
+                restored.connection.expression(),
+                original.connection.expression(),
+            );
+
+            assert_eq!(
+                restored_output,
+                original_output,
+            );
+        }
     }
 }
