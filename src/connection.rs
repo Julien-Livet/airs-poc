@@ -1,6 +1,321 @@
 use crate::registry::{PrimitiveEntry, Type, Value, FunctionTypeRegistry, DynamicPrimitive};
-use crate::types::{Grid};
-use crate::function::{Function};
+use crate::types::*;
+use crate::function::Function;
+
+use serde::{Deserialize, Serialize};
+
+impl TryFrom<ConnectionJson> for Connection {
+    type Error = String;
+
+    fn try_from(value: ConnectionJson) -> Result<Self, Self::Error> {
+        match value {
+            ConnectionJson::Input { name, ty } => {
+                Ok(Connection::Input {
+                    name,
+                    ty: ty.try_into()?,
+                })
+            }
+
+            ConnectionJson::Constant { name, value } => {
+                Ok(Connection::Constant {
+                    name,
+                    value: value.try_into()?,
+                })
+            }
+
+            ConnectionJson::Primitive {
+                primitive,
+                inputs,
+            } => {
+                let primitive_entry =
+                    crate::registry::PRIMITIVES
+                        .iter()
+                        .find(|entry| entry.name == primitive)
+                        .ok_or_else(|| {
+                            format!(
+                                "unknown primitive '{}'",
+                                primitive
+                            )
+                        })?;
+
+                let inputs = inputs
+                    .into_iter()
+                    .map(Connection::try_from)
+                    .map(|input| input.map(Box::new))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Connection::new(
+                    primitive_entry,
+                    inputs,
+                )
+            }
+
+            ConnectionJson::CallablePrimitive { primitive } => {
+                let primitive_entry =
+                    crate::registry::PRIMITIVES
+                        .iter()
+                        .find(|entry| {
+                            entry.name == primitive
+                                && entry.output == Type::Callable
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                                "unknown callable primitive '{}'",
+                                primitive
+                            )
+                        })?;
+
+                Ok(Connection::CallablePrimitive {
+                    primitive: primitive_entry,
+                })
+            }
+
+            ConnectionJson::Dynamic {
+                primitive,
+                inputs,
+                output,
+                family,
+                fixed,
+                left,
+            } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(Connection::try_from)
+                    .map(|input| input.map(Box::new))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let fixed = fixed
+                    .map(|fixed| Connection::try_from(*fixed))
+                    .transpose()?
+                    .map(Box::new);
+
+                Ok(Connection::Dynamic {
+                    primitive: primitive.into(),
+                    inputs,
+                    output: output.try_into()?,
+                    family: family
+                        .map(|family| {
+                            Box::leak(
+                                family.into_boxed_str()
+                            ) as &'static str
+                        }),
+                    fixed,
+                    left,
+                })
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum ConnectionJson {
+    Input {
+        name: String,
+        ty: TypeJson,
+    },
+
+    Constant {
+        name: String,
+        value: ValueJson,
+    },
+
+    CallablePrimitive {
+        primitive: String,
+    },
+
+    Primitive {
+        primitive: String,
+        inputs: Vec<ConnectionJson>,
+    },
+
+    Dynamic {
+        primitive: DynamicPrimitiveJson,
+        inputs: Vec<ConnectionJson>,
+        output: TypeJson,
+        family: Option<String>,
+        fixed: Option<Box<ConnectionJson>>,
+        left: bool,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TypeJson {
+    Boolean,
+    Integer,
+    Grid,
+    IntegerTuple,
+    Indices,
+    Object,
+    IntegerVector,
+    GridVector,
+    TupleVector,
+    Callable,
+    ObjectVector,
+    Objects,
+}
+
+impl TryFrom<Type> for TypeJson {
+    type Error = String;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        match value {
+            Type::Boolean => Ok(Self::Boolean),
+            Type::Integer => Ok(Self::Integer),
+            Type::Grid => Ok(Self::Grid),
+            Type::IntegerTuple => Ok(Self::IntegerTuple),
+            Type::Indices => Ok(Self::Indices),
+            Type::Object => Ok(Self::Object),
+            Type::IntegerVector => Ok(Self::IntegerVector),
+            Type::GridVector => Ok(Self::GridVector),
+            Type::TupleVector => Ok(Self::TupleVector),
+            Type::Callable => Ok(Self::Callable),
+            Type::ObjectVector => Ok(Self::ObjectVector),
+            Type::Objects => Ok(Self::Objects),
+
+            Type::Function(_) => Err(
+                "Function types require signature serialization"
+                    .to_string(),
+            ),
+        }
+    }
+}
+
+impl TryFrom<TypeJson> for Type {
+    type Error = String;
+
+    fn try_from(value: TypeJson) -> Result<Self, Self::Error> {
+        match value {
+            TypeJson::Boolean => Ok(Self::Boolean),
+            TypeJson::Integer => Ok(Self::Integer),
+            TypeJson::Grid => Ok(Self::Grid),
+            TypeJson::IntegerTuple => Ok(Self::IntegerTuple),
+            TypeJson::Indices => Ok(Self::Indices),
+            TypeJson::Object => Ok(Self::Object),
+            TypeJson::IntegerVector => Ok(Self::IntegerVector),
+            TypeJson::GridVector => Ok(Self::GridVector),
+            TypeJson::TupleVector => Ok(Self::TupleVector),
+            TypeJson::Callable => Ok(Self::Callable),
+            TypeJson::ObjectVector => Ok(Self::ObjectVector),
+            TypeJson::Objects => Ok(Self::Objects),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum DynamicPrimitiveJson {
+    Lbind,
+    Apply,
+    Rbind,
+    HistoricalApply,
+}
+
+impl From<DynamicPrimitive> for DynamicPrimitiveJson {
+    fn from(value: DynamicPrimitive) -> Self {
+        match value {
+            DynamicPrimitive::Lbind => Self::Lbind,
+            DynamicPrimitive::Apply => Self::Apply,
+            DynamicPrimitive::Rbind => Self::Rbind,
+            DynamicPrimitive::HistoricalApply => {
+                Self::HistoricalApply
+            }
+        }
+    }
+}
+
+impl From<DynamicPrimitiveJson> for DynamicPrimitive {
+    fn from(value: DynamicPrimitiveJson) -> Self {
+        match value {
+            DynamicPrimitiveJson::Lbind => Self::Lbind,
+            DynamicPrimitiveJson::Apply => Self::Apply,
+            DynamicPrimitiveJson::Rbind => Self::Rbind,
+            DynamicPrimitiveJson::HistoricalApply => {
+                Self::HistoricalApply
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum ValueJson {
+    Boolean(Boolean),
+    Integer(Integer),
+    Grid(Grid),
+    IntegerTuple(IntegerTuple),
+    Indices(Indices),
+    Object(Object),
+    IntegerVector(IntegerVector),
+    GridVector(GridVector),
+    TupleVector(TupleVector),
+    ObjectVector(ObjectVector),
+    Objects(Objects),
+}
+
+impl TryFrom<Value> for ValueJson {
+    type Error = String;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Boolean(value) => Ok(Self::Boolean(value)),
+            Value::Integer(value) => Ok(Self::Integer(value)),
+            Value::Grid(value) => Ok(Self::Grid(value)),
+            Value::IntegerTuple(value) => {
+                Ok(Self::IntegerTuple(value))
+            }
+            Value::Indices(value) => Ok(Self::Indices(value)),
+            Value::Object(value) => Ok(Self::Object(value)),
+            Value::IntegerVector(value) => {
+                Ok(Self::IntegerVector(value))
+            }
+            Value::GridVector(value) => {
+                Ok(Self::GridVector(value))
+            }
+            Value::TupleVector(value) => {
+                Ok(Self::TupleVector(value))
+            }
+            Value::ObjectVector(value) => {
+                Ok(Self::ObjectVector(value))
+            }
+            Value::Objects(value) => Ok(Self::Objects(value)),
+
+            Value::Function(_) => Err(
+                "Function values require function serialization"
+                    .to_string(),
+            ),
+        }
+    }
+}
+
+impl TryFrom<ValueJson> for Value {
+    type Error = String;
+
+    fn try_from(value: ValueJson) -> Result<Self, Self::Error> {
+        match value {
+            ValueJson::Boolean(value) => Ok(Self::Boolean(value)),
+            ValueJson::Integer(value) => Ok(Self::Integer(value)),
+            ValueJson::Grid(value) => Ok(Self::Grid(value)),
+            ValueJson::IntegerTuple(value) => {
+                Ok(Self::IntegerTuple(value))
+            }
+            ValueJson::Indices(value) => Ok(Self::Indices(value)),
+            ValueJson::Object(value) => Ok(Self::Object(value)),
+            ValueJson::IntegerVector(value) => {
+                Ok(Self::IntegerVector(value))
+            }
+            ValueJson::GridVector(value) => {
+                Ok(Self::GridVector(value))
+            }
+            ValueJson::TupleVector(value) => {
+                Ok(Self::TupleVector(value))
+            }
+            ValueJson::ObjectVector(value) => {
+                Ok(Self::ObjectVector(value))
+            }
+            ValueJson::Objects(value) => Ok(Self::Objects(value)),
+        }
+    }
+}
 
 pub fn apply_container_type(
     container_type: Type,
@@ -858,6 +1173,68 @@ impl Connection {
                         .map(|fixed| Box::new(fixed.substitute_input(name, replacement))),
                     left: *left,
                 }
+            }
+        }
+    }
+
+    pub fn to_json(&self) -> Result<ConnectionJson, String> {
+        match self {
+            Connection::Input { name, ty } => {
+                Ok(ConnectionJson::Input {
+                    name: name.clone(),
+                    ty: (*ty).try_into()?,
+                })
+            }
+
+            Connection::Constant { name, value } => {
+                Ok(ConnectionJson::Constant {
+                    name: name.clone(),
+                    value: value.clone().try_into()?,
+                })
+            }
+
+            Connection::CallablePrimitive { primitive } => {
+                Ok(ConnectionJson::CallablePrimitive {
+                    primitive: primitive.name.to_string(),
+                })
+            }
+
+            Connection::Primitive {
+                primitive,
+                inputs,
+            } => {
+                Ok(ConnectionJson::Primitive {
+                    primitive: primitive.name.to_string(),
+                    inputs: inputs
+                        .iter()
+                        .map(|input| input.to_json())
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            }
+
+            Connection::Dynamic {
+                primitive,
+                inputs,
+                output,
+                family,
+                fixed,
+                left,
+            } => {
+                Ok(ConnectionJson::Dynamic {
+                    primitive: (*primitive).into(),
+                    inputs: inputs
+                        .iter()
+                        .map(|input| input.to_json())
+                        .collect::<Result<Vec<_>, _>>()?,
+                    output: (*output).try_into()?,
+                    family: family.map(str::to_string),
+                    fixed: fixed
+                        .as_ref()
+                        .map(|fixed| fixed.to_json())
+                        .transpose()?
+                        .map(Box::new),
+                    left: *left,
+                })
             }
         }
     }
@@ -2820,5 +3197,256 @@ mod tests {
                 Type::Callable
             );
         }
+    }
+
+    #[test]
+    fn connection_json_round_trip_serializes() {
+        let primitive = crate::registry::PRIMITIVES
+            .iter()
+            .find(|primitive| {
+                primitive.name == "hmirror"
+                    && primitive.inputs == &[Type::Grid]
+                    && primitive.output == Type::Grid
+            })
+            .expect("expected hmirror");
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+        )
+        .expect("expected valid connection");
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let text =
+            serde_json::to_string_pretty(&json)
+                .expect("expected JSON serialization");
+
+        println!("{text}");
+
+        assert!(text.contains("\"kind\": \"Primitive\""));
+        assert!(text.contains("\"primitive\": \"hmirror\""));
+    }
+
+    #[test]
+    fn connection_json_input_deserializes() {
+        let connection = Connection::input(
+            "I",
+            Type::Grid,
+        );
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let restored =
+            Connection::try_from(json)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn connection_json_constant_deserializes() {
+        let connection = Connection::Constant {
+            name: "grid".to_string(),
+            value: Value::Grid(vec![
+                vec![1, 2],
+                vec![3, 4],
+            ]),
+        };
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let restored =
+            Connection::try_from(json)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn connection_json_primitive_deserializes() {
+        let primitive =
+            crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| {
+                    primitive.name == "hmirror"
+                        && primitive.inputs == &[Type::Grid]
+                        && primitive.output == Type::Grid
+                })
+                .expect("expected hmirror");
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+        )
+        .expect("expected valid connection");
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let restored =
+            Connection::try_from(json)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn connection_json_callable_primitive_deserializes() {
+        let primitive =
+            crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| {
+                    primitive.name == "identity"
+                        && primitive.output == Type::Callable
+                })
+                .expect("expected identity callable");
+
+        let connection =
+            Connection::callable_primitive(primitive);
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let restored =
+            Connection::try_from(json)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn connection_json_dynamic_deserializes() {
+        let connection = Connection::Dynamic {
+            primitive: DynamicPrimitive::Apply,
+            inputs: vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+            output: Type::Grid,
+            family: None,
+            fixed: None,
+            left: false,
+        };
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let restored =
+            Connection::try_from(json)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
+    }
+
+    #[test]
+    fn connection_json_round_trip() {
+        let primitive =
+            crate::registry::PRIMITIVES
+                .iter()
+                .find(|primitive| {
+                    primitive.name == "hmirror"
+                        && primitive.inputs == &[Type::Grid]
+                        && primitive.output == Type::Grid
+                })
+                .expect("expected hmirror");
+
+        let connection = Connection::new(
+            primitive,
+            vec![
+                Box::new(Connection::input(
+                    "I",
+                    Type::Grid,
+                )),
+            ],
+        )
+        .expect("expected valid connection");
+
+        let json = connection
+            .to_json()
+            .expect("expected JSON representation");
+
+        let text =
+            serde_json::to_string_pretty(&json)
+                .expect("expected JSON serialization");
+
+        let decoded: ConnectionJson =
+            serde_json::from_str(&text)
+                .expect("expected JSON deserialization");
+
+        let restored =
+            Connection::try_from(decoded)
+                .expect("expected Connection");
+
+        assert_eq!(
+            restored.expression(),
+            connection.expression(),
+        );
+
+        assert_eq!(
+            restored.output_type(),
+            connection.output_type(),
+        );
     }
 }
