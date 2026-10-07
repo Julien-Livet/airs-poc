@@ -1,5 +1,60 @@
-use crate::types::{Grid, Indices, Integer, IntegerTuple, Object, Boolean};
+use crate::types::*;
 use primitive_macro::primitive;
+
+#[primitive("equality")]
+pub fn equality_boolean(a: Boolean, b: Boolean) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_integer(a: Integer, b: Integer) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_integer_tuple(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_grid(a: Grid, b: Grid) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_object(a: Object, b: Object) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_objects(a: Objects, b: Objects) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_indices(a: Indices, b: Indices) -> Boolean {
+    a == b
+}
+
+#[primitive("equality")]
+pub fn equality_integer_vector(
+    a: IntegerVector,
+    b: IntegerVector,
+) -> Boolean {
+    a == b
+}
+
+#[primitive("color")]
+pub fn color(object: Object) -> Integer {
+    object
+        .iter()
+        .next()
+        .map(|(color, _)| *color)
+        .expect("empty Object")
+}
 
 #[primitive("flip")]
 pub fn flip(value: Boolean) -> Boolean {
@@ -674,6 +729,7 @@ pub fn crop(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use crate::registry::{PRIMITIVES, Type};
 
     #[test]
     fn corners_of_indices() {
@@ -837,5 +893,82 @@ mod tests {
     #[should_panic(expected = "add produced identity")]
     fn add_tuple_integer_rejects_identity() {
         add_tuple_integer((2, 3), 0);
+    }
+
+    #[test]
+fn color_returns_first_object_color() {
+    let object: Object = BTreeSet::from([
+        (3, (4, 5)),
+        (7, (1, 2)),
+    ]);
+
+    assert_eq!(color(object), 3);
+}
+
+    #[test]
+    #[should_panic(expected = "empty Object")]
+    fn color_rejects_empty_object() {
+        color(BTreeSet::new());
+    }
+
+    #[test]
+    fn equality_compares_integers() {
+        assert!(equality_integer(3, 3));
+        assert!(!equality_integer(3, 4));
+    }
+
+    #[test]
+    fn equality_compares_grids() {
+        let a: Grid = vec![vec![1, 2], vec![3, 4]];
+        let b: Grid = vec![vec![1, 2], vec![3, 4]];
+        let c: Grid = vec![vec![1, 2], vec![4, 3]];
+
+        assert!(equality_grid(a.clone(), b));
+        assert!(!equality_grid(a, c));
+    }
+
+    #[test]
+    fn equality_compares_objects() {
+        let a: Object = std::collections::BTreeSet::from([
+            (1, (2, 3)),
+            (4, (5, 6)),
+        ]);
+
+        let b = a.clone();
+
+        let c: Object = std::collections::BTreeSet::from([
+            (1, (2, 3)),
+        ]);
+
+        assert!(equality_object(a.clone(), b));
+        assert!(!equality_object(a, c));
+    }
+
+    #[test]
+    fn equality_compares_integer_vectors() {
+        assert!(equality_integer_vector(
+            vec![1, 2, 3],
+            vec![1, 2, 3],
+        ));
+
+        assert!(!equality_integer_vector(
+            vec![1, 2, 3],
+            vec![1, 3, 2],
+        ));
+    }
+
+    #[test]
+    fn arithmetic_callable_families_exist() {
+        for name in ["add", "subtract", "multiply", "divide"] {
+            assert!(
+                PRIMITIVES.iter().any(|primitive| {
+                    primitive.name == name
+                        && primitive.inputs.is_empty()
+                        && primitive.output == Type::Callable
+                }),
+                "missing Callable primitive family: {}",
+                name
+            );
+        }
     }
 }
