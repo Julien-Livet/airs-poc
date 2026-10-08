@@ -5,262 +5,75 @@ use crate::connection::Connection;
 use crate::types::*;
 use crate::function::Function;
 
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static rot270_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "rot270",
-        inputs: &[],
-        output: Type::Callable,
-        apply: rot270_callable_apply,
-    };
+macro_rules! define_callable_primitive {
+    (
+        $entry:ident,
+        $apply:ident,
+        $name:literal
+    ) => {
+        #[linkme::distributed_slice(PRIMITIVES)]
+        #[allow(non_upper_case_globals)]
+        pub static $entry: PrimitiveEntry = PrimitiveEntry {
+            name: $name,
+            inputs: &[],
+            output: Type::Callable,
+            apply: $apply,
+        };
 
-fn rot270_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&rot270_callable_entry),
-    )))
+        fn $apply(
+            _values: &[Value],
+        ) -> Result<Value, String> {
+            Ok(Value::Function(Box::new(
+                Function::primitive_family(&$entry),
+            )))
+        }
+    };
 }
 
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static rot180_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "rot180",
-        inputs: &[],
-        output: Type::Callable,
-        apply: rot180_callable_apply,
-    };
-
-fn rot180_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&rot180_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static rot90_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "rot90",
-        inputs: &[],
-        output: Type::Callable,
-        apply: rot90_callable_apply,
-    };
-
-fn rot90_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&rot90_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static dmirror_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "dmirror",
-        inputs: &[],
-        output: Type::Callable,
-        apply: dmirror_callable_apply,
-    };
-
-fn dmirror_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&dmirror_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static cmirror_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "cmirror",
-        inputs: &[],
-        output: Type::Callable,
-        apply: cmirror_callable_apply,
-    };
-
-fn cmirror_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&cmirror_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static vmirror_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "vmirror",
-        inputs: &[],
-        output: Type::Callable,
-        apply: vmirror_callable_apply,
-    };
-
-fn vmirror_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&vmirror_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static hmirror_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "hmirror",
-        inputs: &[],
-        output: Type::Callable,
-        apply: hmirror_callable_apply,
-    };
-
-fn hmirror_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&hmirror_callable_entry),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static size_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "size",
-        inputs: &[],
-        output: Type::Callable,
-        apply: size_callable_apply,
-    };
-
-fn size_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&size_callable_entry),
-    )))
-}
-
-#[distributed_slice(PRIMITIVES)]
-static EQUALITY_CALLABLE: PrimitiveEntry = PrimitiveEntry {
-    name: "equality",
-    inputs: &[],
-    output: Type::Callable,
-    apply: |arguments| {
-        Err(format!(
-            "cannot directly execute generic equality with arguments: {:?}",
-            arguments
-        ))
-    },
-};
-
-fn identity_callable_apply(
-    values: &[Value],
-) -> Result<Value, String> {
-    if values.len() != 1 {
-        return Err(
-            "identity expects one argument".to_string()
-        );
-    }
-
-    Ok(values[0].clone())
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static identity_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "identity",
-        inputs: &[],
-        output: Type::Callable,
-        apply: identity_callable_apply,
-    };
-
-fn add_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(&add_callable_entry),
-    )))
-}
-
-fn subtract_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(
-            &subtract_callable_entry,
-        ),
-    )))
-}
-
-fn multiply_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(
-            &multiply_callable_entry,
-        ),
-    )))
-}
-
-fn divide_callable_apply(
-    _values: &[Value],
-) -> Result<Value, String> {
-    Ok(Value::Function(Box::new(
-        Function::primitive_family(
-            &divide_callable_entry,
-        ),
-    )))
-}
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static subtract_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "subtract",
-        inputs: &[],
-        output: Type::Callable,
-        apply: subtract_callable_apply,
-    };
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static multiply_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "multiply",
-        inputs: &[],
-        output: Type::Callable,
-        apply: multiply_callable_apply,
-    };
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static divide_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "divide",
-        inputs: &[],
-        output: Type::Callable,
-        apply: divide_callable_apply,
-    };
-
-#[linkme::distributed_slice(PRIMITIVES)]
-#[allow(non_upper_case_globals)]
-pub static add_callable_entry: PrimitiveEntry =
-    PrimitiveEntry {
-        name: "add",
-        inputs: &[],
-        output: Type::Callable,
-        apply: add_callable_apply,
-    };
+define_callable_primitive!(halve_callable_entry, halve_callable_apply, "halve"); //scaling by one half
+define_callable_primitive!(double_callable_entry, double_callable_apply, "double"); //scaling by two
+define_callable_primitive!(even_callable_entry, even_callable_apply, "even"); //evenness
+define_callable_primitive!(add_callable_entry, add_callable_apply, "add"); //addition
+define_callable_primitive!(subtract_callable_entry, subtract_callable_apply, "subtract"); //subtraction
+define_callable_primitive!(multiply_callable_entry, multiply_callable_apply, "multiply"); //multiplication
+define_callable_primitive!(divide_callable_entry, divide_callable_apply, "divide"); //floor division
+define_callable_primitive!(invert_callable_entry, invert_callable_apply, "invert"); //inversion with respect to addition
+define_callable_primitive!(tojvec_callable_entry, tojvec_callable_apply, "tojvec"); //vector pointing horizontally
+define_callable_primitive!(toivec_callable_entry, toivec_callable_apply, "toivec"); //vector pointing vertically
+define_callable_primitive!(portrait_callable_entry, portrait_callable_apply, "portrait"); //whether height is greater than width
+define_callable_primitive!(shape_callable_entry, shape_callable_apply, "shape"); //height and width of grid or patch 
+define_callable_primitive!(either_callable_entry, either_callable_apply, "either"); //logical or
+define_callable_primitive!(both_callable_entry, both_callable_apply, "both"); //logical and
+define_callable_primitive!(vconcat_callable_entry, vconcat_callable_apply, "vconcat"); //concatenate two grids vertically
+define_callable_primitive!(hconcat_callable_entry, hconcat_callable_apply, "hconcat"); //concatenate two grids horizontally
+define_callable_primitive!(flip_callable_entry, flip_callable_apply, "flip"); //logical not
+define_callable_primitive!(color_callable_entry, color_callable_apply, "color"); //color of object
+define_callable_primitive!(toindices_callable_entry, toindices_callable_apply, "toindices"); //indices of object cells
+define_callable_primitive!(uppermost_callable_entry, uppermost_callable_apply, "uppermost"); //row index of uppermost occupied cell
+define_callable_primitive!(lowermost_callable_entry, lowermost_callable_apply, "lowermost"); //row index of lowermost occupied cell
+define_callable_primitive!(leftmost_callable_entry, leftmost_callable_apply, "leftmost"); //column index of leftmost occupied cell
+define_callable_primitive!(rightmost_callable_entry, rightmost_callable_apply, "rightmost"); //column index of rightmost occupied cell
+define_callable_primitive!(shift_callable_entry, shift_callable_apply, "shift"); //shift patch
+define_callable_primitive!(normalize_callable_entry, normalize_callable_apply, "normalize"); //moves upper left corner to origin
+define_callable_primitive!(height_callable_entry, height_callable_apply, "height"); //height of grid or patch
+define_callable_primitive!(width_callable_entry, width_callable_apply, "width"); //width of grid or patch
+define_callable_primitive!(hperiod_callable_entry, hperiod_callable_apply, "hperiod"); //horizontal periodicity
+define_callable_primitive!(vperiod_callable_entry, vperiod_callable_apply, "vperiod"); //vertical periodicity
+define_callable_primitive!(ulcorner_callable_entry, ulcorner_callable_apply, "ulcorner"); //index of upper left corner
+define_callable_primitive!(urcorner_callable_entry, urcorner_callable_apply, "urcorner"); //index of upper right corner
+define_callable_primitive!(llcorner_callable_entry, llcorner_callable_apply, "llcorner"); //index of lower left corner
+define_callable_primitive!(lrcorner_callable_entry, lrcorner_callable_apply, "lrcorner"); //index of lower right corner
+define_callable_primitive!(crop_callable_entry, crop_callable_apply, "crop"); //subgrid specified by start and dimension
+define_callable_primitive!(rot270_callable_entry, rot270_callable_apply, "rot270"); //quarter anticlockwise rotation
+define_callable_primitive!(rot180_callable_entry, rot180_callable_apply, "rot180"); //half rotation
+define_callable_primitive!(rot90_callable_entry, rot90_callable_apply, "rot90"); //quarter clockwise rotation
+define_callable_primitive!(dmirror_callable_entry, dmirror_callable_apply, "dmirror"); //mirroring along diagonal
+define_callable_primitive!(cmirror_callable_entry, cmirror_callable_apply, "cmirror"); //mirroring along counterdiagonal
+define_callable_primitive!(hmirror_callable_entry, hmirror_callable_apply, "hmirror"); //mirroring along horizontal
+define_callable_primitive!(vmirror_callable_entry, vmirror_callable_apply, "vmirror"); //mirroring along vertical
+define_callable_primitive!(size_callable_entry, size_callable_apply, "size"); //cardinality
+define_callable_primitive!(equality_callable_entry, equality_callable_apply, "equality"); //equality
+define_callable_primitive!(identity_callable_entry, identity_callable_apply, "identity"); //identity function
 
 pub fn apply_primitive_family(
     name: &str,
@@ -1021,6 +834,21 @@ pub fn find_by_name_and_inputs(
         })
 }
 
+pub fn find_primitive(
+    name: &str,
+    inputs: &[Type],
+    output: Type,
+) -> &'static PrimitiveEntry {
+    PRIMITIVES
+        .iter()
+        .find(|primitive| {
+            primitive.name == name
+                && primitive.inputs == inputs
+                && primitive.output == output
+        })
+        .expect("primitive should be registered")
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1031,7 +859,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 93);
+        assert_eq!(PRIMITIVES.len(), 153);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -1140,10 +968,11 @@ mod tests
 
     #[test]
     fn registered_corner_can_be_applied_dynamically() {
-        let primitive = PRIMITIVES
-            .iter()
-            .find(|primitive| primitive.name == "ulcorner")
-            .expect("ulcorner should be registered");
+        let primitive = find_primitive(
+            "ulcorner",
+            &[Type::Indices],
+            Type::IntegerTuple,
+        );
 
         let indices = std::collections::BTreeSet::from([
             (2, 5),
