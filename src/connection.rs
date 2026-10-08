@@ -247,7 +247,6 @@ impl From<DynamicPrimitiveJson> for DynamicPrimitive {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum ValueJson {
     Boolean(Boolean),
     Integer(Integer),
@@ -1365,8 +1364,8 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(depth_1.len(), 63);
-        assert_eq!(depth_2.len(), 119734);
+        assert_eq!(depth_1.len(), 68);
+        assert_eq!(depth_2.len(), 143552);
     }
 
     #[test]
