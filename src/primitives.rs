@@ -1,6 +1,159 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+#[primitive("branch")]
+pub fn branch_grid(condition: Boolean, a: Grid, b: Grid) -> Grid {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_objects(condition: Boolean, a: Objects, b: Objects) -> Objects {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_object(condition: Boolean, a: Object, b: Object) -> Object {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_indices(condition: Boolean, a: Indices, b: Indices) -> Indices {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_tuple(condition: Boolean, a: IntegerTuple, b: IntegerTuple) -> IntegerTuple {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_integer(condition: Boolean, a: Integer, b: Integer) -> Integer {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("branch")]
+pub fn branch_boolean(condition: Boolean, a: Boolean, b: Boolean) -> Boolean {
+    if condition {
+        a
+    }
+    else {
+        b
+    }
+}
+
+#[primitive("pair")]
+pub fn pair(a: IntegerVector, b: IntegerVector) -> Grid {
+    if a.len() != b.len() {
+        panic!("Wrong value");
+    }
+
+    a.into_iter()
+        .zip(b)
+        .map(|(x, y)| vec![x, y])
+        .collect()
+}
+
+#[primitive("astuple")]
+pub fn astuple(a: Integer, b: Integer) -> IntegerTuple {
+    (a, b)
+}
+
+#[primitive("positive")]
+pub fn positive(a: Integer) -> Boolean {
+    a > 0
+}
+
+#[primitive("sign")]
+pub fn sign_tuple(a: IntegerTuple) -> IntegerTuple {
+    (sign(a.0), sign(a.1))
+}
+
+#[primitive("sign")]
+pub fn sign(a: Integer) -> Integer {
+    if a == 0 {
+        0
+    }
+    else if a > 0 {
+        1
+    }
+    else {
+        -1
+    }
+}
+
+#[primitive("crement")]
+pub fn crement_tuple(a: IntegerTuple) -> IntegerTuple {
+    (crement(a.0), crement(a.1))
+}
+
+#[primitive("crement")]
+pub fn crement(a: Integer) -> Integer {
+    if a == 0 {
+        a
+    }
+    else if a > 0 {
+        increment(a)
+    }
+    else {
+        decrement(a)
+    }
+}
+
+#[primitive("decrement")]
+pub fn decrement_tuple(a: IntegerTuple) -> IntegerTuple {
+    (a.0 - 1, a.1 - 1)
+}
+
+#[primitive("decrement")]
+pub fn decrement(a: Integer) -> Integer {
+    a - 1
+}
+
+#[primitive("increment")]
+pub fn increment_tuple(a: IntegerTuple) -> IntegerTuple {
+    (a.0 + 1, a.1 + 1)
+}
+
+#[primitive("increment")]
+pub fn increment(a: Integer) -> Integer {
+    a + 1
+}
+
+#[primitive("greater")]
+pub fn greater(a: Integer, b: Integer) -> Boolean {
+    a > b
+}
+
 #[primitive("halve")]
 pub fn halve(a: Integer) -> Integer {
     a / 2
