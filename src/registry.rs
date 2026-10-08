@@ -945,7 +945,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 343);
+        assert_eq!(PRIMITIVES.len(), 344);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
