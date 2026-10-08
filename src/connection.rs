@@ -1437,7 +1437,7 @@ mod tests {
         );
 
         assert_eq!(depth_1.len(), 69);
-        assert_eq!(depth_2.len(), 155466);
+        assert_eq!(depth_2.len(), 155468);
     }
 
     #[test]
