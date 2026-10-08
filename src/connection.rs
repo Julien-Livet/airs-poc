@@ -27,26 +27,32 @@ impl TryFrom<ConnectionJson> for Connection {
                 primitive,
                 inputs,
             } => {
-                let primitive_entry =
-                    crate::registry::PRIMITIVES
-                        .iter()
-                        .find(|entry| {
-                            entry.name == primitive
-                                && entry.inputs.len() == inputs.len()
-                        })
-                        .ok_or_else(|| {
-                            format!(
-                                "unknown primitive '{}' with {} inputs",
-                                primitive,
-                                inputs.len()
-                            )
-                        })?;
-
+                // Deserialize inputs first, so we know their actual types.
                 let inputs = inputs
                     .into_iter()
                     .map(Connection::try_from)
                     .map(|input| input.map(Box::new))
                     .collect::<Result<Vec<_>, _>>()?;
+
+                let input_types: Vec<Type> = inputs
+                    .iter()
+                    .map(|input| input.output_type())
+                    .collect();
+
+                let primitive_entry =
+                    crate::registry::PRIMITIVES
+                        .iter()
+                        .find(|entry| {
+                            entry.name == primitive
+                                && entry.inputs == input_types.as_slice()
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                                "unknown primitive '{}' with signature {:?}",
+                                primitive,
+                                input_types
+                            )
+                        })?;
 
                 Connection::new(
                     primitive_entry,
@@ -1360,7 +1366,7 @@ mod tests {
         );
 
         assert_eq!(depth_1.len(), 63);
-        assert_eq!(depth_2.len(), 119635);
+        assert_eq!(depth_2.len(), 119671);
     }
 
     #[test]
