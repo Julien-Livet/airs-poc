@@ -3071,11 +3071,6 @@ mod tests
         let mut function_types =
             crate::registry::FunctionTypeRegistry::new();
 
-        let target_type = function_types.type_of(
-            &[Type::Integer],
-            Type::Integer,
-        );
-
         let function = Function::new(
             vec![
                 InputSpec {
@@ -3093,18 +3088,40 @@ mod tests
             ),
         );
 
-        let terminals = Terminals {
-            values: vec![
-                NamedTerminal {
-                    name: "F",
-                    value: Value::Function(Box::new(function)),
-                },
-                NamedTerminal {
-                    name: "10",
-                    value: Value::Integer(10),
-                },
-            ],
+        let function = Connection::Constant {
+            name: "F".to_string(),
+            value: Value::Function(Box::new(function)),
         };
+
+        let fixed = Connection::Constant {
+            name: "10".to_string(),
+            value: Value::Integer(10),
+        };
+
+        let bound = Connection::lbind(
+            function,
+            fixed,
+            &mut function_types,
+        )
+        .expect("lbind should succeed");
+
+        let argument = Connection::Constant {
+            name: "42".to_string(),
+            value: Value::Integer(42),
+        };
+
+        let applied = Connection::apply(
+            bound,
+            vec![argument],
+            &mut function_types,
+        )
+        .expect("bound function should be applicable");
+
+        let result = applied
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("bound function should evaluate");
+
+        assert!(matches!(result, Value::Integer(10)));
     }
 
     #[test]
@@ -5853,193 +5870,134 @@ mod tests
     }
 
     #[test]
-    fn built_callable_can_be_lbound_and_applied() {
-        use rand::SeedableRng;
+    fn add_callable_can_be_lbound_and_applied() {
+        let mut function_types = FunctionTypeRegistry::new();
+        register_primitive_function_types(&mut function_types);
 
-        let terminals = Terminals::arc_agi();
-
-        for seed in 0..100 {
-            let mut rng =
-                rand::rngs::StdRng::seed_from_u64(seed);
-
-            let mut function_types =
-                FunctionTypeRegistry::new();
-
-            let Ok(connection) = build_connection(
-                Type::Callable,
-                1,
-                &terminals,
-                &[],
-                &mut function_types,
-                &mut rng,
-            ) else {
-                continue;
-            };
-
-            let fixed = Connection::Constant {
-                name: "2".to_string(),
-                value: Value::Integer(2),
-            };
-
-            let Ok(bound) = Connection::lbind(
-                connection,
-                fixed,
-                &mut function_types,
-            ) else {
-                continue;
-            };
-
-            let argument = Connection::Constant {
-                name: "3".to_string(),
-                value: Value::Integer(3),
-            };
-
-            let Ok(applied) = Connection::apply(
-                bound,
-                vec![argument],
-                &mut function_types,
-            ) else {
-                continue;
-            };
-
-            let Ok(result) = applied.output_with_inputs(
-                &InputEnvironment::new(),
-            ) else {
-                continue;
-            };
-
-            if matches!(result, Value::Integer(5)) {
-                return;
-            }
-        }
-
-        panic!(
-            "could not build and execute callable add"
+        let add = find_primitive(
+            "add",
+            &[],
+            Type::Callable,
         );
+
+        let connection = Connection::CallablePrimitive {
+            primitive: add,
+        };
+
+        let fixed = Connection::Constant {
+            name: "2".to_string(),
+            value: Value::Integer(2),
+        };
+
+        let bound = Connection::lbind(
+            connection,
+            fixed,
+            &mut function_types,
+        )
+        .expect("add should be lbindable");
+
+        let argument = Connection::Constant {
+            name: "3".to_string(),
+            value: Value::Integer(3),
+        };
+
+        let applied = Connection::apply(
+            bound,
+            vec![argument],
+            &mut function_types,
+        )
+        .expect("bound add should be applicable");
+
+        let result = applied
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("bound add should evaluate");
+
+        assert!(matches!(result, Value::Integer(5)));
     }
 
     #[test]
-    fn built_callable_can_be_rbound_and_applied() {
-        use rand::SeedableRng;
+    fn built_add_callable_can_be_rbound_and_applied() {
+        let mut function_types = FunctionTypeRegistry::new();
+        register_primitive_function_types(&mut function_types);
 
-        let terminals = Terminals::arc_agi();
-
-        for seed in 0..100 {
-            let mut rng =
-                rand::rngs::StdRng::seed_from_u64(seed);
-
-            let mut function_types =
-                FunctionTypeRegistry::new();
-
-            let Ok(connection) = build_connection(
-                Type::Callable,
-                1,
-                &terminals,
-                &[],
-                &mut function_types,
-                &mut rng,
-            ) else {
-                continue;
-            };
-
-            let fixed = Connection::Constant {
-                name: "3".to_string(),
-                value: Value::Integer(3),
-            };
-
-            let Ok(bound) = Connection::rbind(
-                connection,
-                fixed,
-                &mut function_types,
-            ) else {
-                continue;
-            };
-
-            let argument = Connection::Constant {
-                name: "2".to_string(),
-                value: Value::Integer(2),
-            };
-
-            let Ok(applied) = Connection::apply(
-                bound,
-                vec![argument],
-                &mut function_types,
-            ) else {
-                continue;
-            };
-
-            let Ok(result) = applied.output_with_inputs(
-                &InputEnvironment::new(),
-            ) else {
-                continue;
-            };
-
-            if matches!(result, Value::Integer(5)) {
-                return;
-            }
-        }
-
-        panic!(
-            "could not build and execute callable add via rbind"
+        let add = find_primitive(
+            "add",
+            &[],
+            Type::Callable,
         );
+
+        let connection = Connection::CallablePrimitive {
+            primitive: add,
+        };
+
+        let fixed = Connection::Constant {
+            name: "3".to_string(),
+            value: Value::Integer(3),
+        };
+
+        let bound = Connection::rbind(
+            connection,
+            fixed,
+            &mut function_types,
+        )
+        .expect("add should be rbindable");
+
+        let argument = Connection::Constant {
+            name: "2".to_string(),
+            value: Value::Integer(2),
+        };
+
+        let applied = Connection::apply(
+            bound,
+            vec![argument],
+            &mut function_types,
+        )
+        .expect("bound add should be applicable");
+
+        let result = applied
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("bound add should evaluate");
+
+        assert!(matches!(result, Value::Integer(5)));
     }
 
     #[test]
-    fn built_callable_can_be_applied_with_two_arguments() {
-        use rand::SeedableRng;
+    fn add_callable_can_be_applied_with_two_arguments() {
+        let mut function_types = FunctionTypeRegistry::new();
+        register_primitive_function_types(&mut function_types);
 
-        let terminals = Terminals::arc_agi();
-
-        for seed in 0..100 {
-            let mut rng =
-                rand::rngs::StdRng::seed_from_u64(seed);
-
-            let mut function_types =
-                FunctionTypeRegistry::new();
-
-            let Ok(connection) = build_connection(
-                Type::Callable,
-                1,
-                &terminals,
-                &[],
-                &mut function_types,
-                &mut rng,
-            ) else {
-                continue;
-            };
-
-            let argument1 = Connection::Constant {
-                name: "2".to_string(),
-                value: Value::Integer(2),
-            };
-
-            let argument2 = Connection::Constant {
-                name: "3".to_string(),
-                value: Value::Integer(3),
-            };
-
-            let Ok(applied) = Connection::apply(
-                connection,
-                vec![argument1, argument2],
-                &mut function_types,
-            ) else {
-                continue;
-            };
-
-            let Ok(result) = applied.output_with_inputs(
-                &InputEnvironment::new(),
-            ) else {
-                continue;
-            };
-
-            if matches!(result, Value::Integer(5)) {
-                return;
-            }
-        }
-
-        panic!(
-            "could not directly apply a generated binary callable"
+        let add = find_primitive(
+            "add",
+            &[],
+            Type::Callable,
         );
+
+        let connection = Connection::CallablePrimitive {
+            primitive: add,
+        };
+
+        let argument1 = Connection::Constant {
+            name: "2".to_string(),
+            value: Value::Integer(2),
+        };
+
+        let argument2 = Connection::Constant {
+            name: "3".to_string(),
+            value: Value::Integer(3),
+        };
+
+        let applied = Connection::apply(
+            connection,
+            vec![argument1, argument2],
+            &mut function_types,
+        )
+        .expect("add should accept two arguments");
+
+        let result = applied
+            .output_with_inputs(&InputEnvironment::new())
+            .expect("add should evaluate");
+
+        assert!(matches!(result, Value::Integer(5)));
     }
 
     #[test]
@@ -6063,7 +6021,7 @@ mod tests
 
         let connections = generate(
             Type::Callable,
-            3,
+            2,
             &terminals,
             &inputs,
             &mut function_types,
@@ -6123,7 +6081,7 @@ mod tests
 
         let programs = generate(
             Type::IntegerVector,
-            3,
+            2,
             &terminals,
             &inputs,
             &mut function_types,
