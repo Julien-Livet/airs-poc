@@ -785,6 +785,57 @@ fn candidate_groups(
     }
 
     if output_type == Type::Callable {
+        // compose
+        let candidates = function_types
+            .compose_candidates()
+            .into_iter()
+            .map(|(outer, inner)| {
+                DynamicCandidate::Compose {
+                    outer,
+                    inner,
+                }
+            })
+            .collect();
+
+        if let Some(group) = dynamic_candidate_group(candidates) {
+            groups.push(group);
+        }
+
+        // chain
+        let candidates = function_types
+            .chain_candidates()
+            .into_iter()
+            .map(|(f, g, h)| {
+                DynamicCandidate::Chain {
+                    f,
+                    g,
+                    h,
+                }
+            })
+            .collect();
+
+        if let Some(group) = dynamic_candidate_group(candidates) {
+            groups.push(group);
+        }
+
+        // fork
+        let candidates = function_types
+            .fork_candidates()
+            .into_iter()
+            .map(|(outer, a, b)| {
+                DynamicCandidate::Fork {
+                    outer,
+                    a,
+                    b,
+                }
+            })
+            .collect();
+
+        if let Some(group) = dynamic_candidate_group(candidates) {
+            groups.push(group);
+        }
+
+        // lbind sur les familles de primitives callable
         for (name, fixed_type) in callable_bind_candidates(true) {
             groups.push(CandidateGroup::Dynamic {
                 candidates: vec![
@@ -796,6 +847,7 @@ fn candidate_groups(
             });
         }
 
+        // rbind sur les familles de primitives callable
         for (name, fixed_type) in callable_bind_candidates(false) {
             groups.push(CandidateGroup::Dynamic {
                 candidates: vec![
@@ -807,10 +859,11 @@ fn candidate_groups(
             });
         }
 
+        // familles de primitives callable
         for name in callable_family_candidates() {
             groups.push(CandidateGroup::Dynamic {
                 candidates: vec![
-                    DynamicCandidate::CallableFamily(name)
+                    DynamicCandidate::CallableFamily(name),
                 ],
             });
         }
@@ -846,6 +899,20 @@ enum DynamicCandidate {
     CallableRbind(&'static str, Type),
     Apply,
     CallableFamily(&'static str),
+    Compose {
+        outer: FunctionTypeId,
+        inner: FunctionTypeId,
+    },
+    Chain {
+        f: FunctionTypeId,
+        g: FunctionTypeId,
+        h: FunctionTypeId,
+    },
+    Fork {
+        a: FunctionTypeId,
+        b: FunctionTypeId,
+        outer: FunctionTypeId,
+    },
 }
 
 impl DynamicCandidate {
@@ -865,6 +932,9 @@ impl DynamicCandidate {
             Self::CallableRbind(..) => "rbind",
             Self::Apply => "apply",
             Self::CallableFamily(name) => name,
+            Self::Fork { .. } => "fork",
+            Self::Compose { .. } => "compose",
+            Self::Chain { .. } => "chain",
         }
     }
 }
@@ -1033,6 +1103,111 @@ fn try_dynamic_candidate(
     rng: &mut impl rand::Rng,
 ) -> Option<Connection> {
     match candidate {
+        DynamicCandidate::Chain { f, g, h } => {
+            let f = build_connection(
+                Type::Function(f),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            let g = build_connection(
+                Type::Function(g),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            let h = build_connection(
+                Type::Function(h),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            Connection::chain(h, g, f).ok()
+        }
+
+        DynamicCandidate::Fork {
+            outer,
+            a,
+            b,
+        } => {
+            let outer = build_connection(
+                Type::Function(outer),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            let a = build_connection(
+                Type::Function(a),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            let b = build_connection(
+                Type::Function(b),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            Connection::fork(
+                outer,
+                a,
+                b,
+            )
+            .ok()
+        }
+
+        DynamicCandidate::Compose { outer, inner } => {
+            let outer = build_connection(
+                Type::Function(outer),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            let inner = build_connection(
+                Type::Function(inner),
+                depth.saturating_sub(1),
+                terminals,
+                inputs,
+                function_types,
+                rng,
+            )
+            .ok()?;
+
+            Connection::compose(
+                outer,
+                inner,
+            )
+            .ok()
+        }
+
         DynamicCandidate::Lbind(
             source_id,
             fixed_type,
@@ -6727,5 +6902,48 @@ mod tests
                 original_output,
             );
         }
+    }
+
+    #[test]
+    fn callable_candidates_include_typed_compose() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let inner = registry.intern(
+            &[Type::Grid],
+            Type::Integer,
+        );
+
+        let outer = registry.intern(
+            &[Type::Integer],
+            Type::Boolean,
+        );
+
+        let groups =
+            candidate_groups(
+                Type::Callable,
+                &registry,
+            );
+
+        let found = groups.iter().any(|group| {
+            match group {
+                CandidateGroup::Dynamic {
+                    candidates,
+                } => candidates.iter().any(|candidate| {
+                    matches!(
+                        candidate,
+                        DynamicCandidate::Compose {
+                            outer: candidate_outer,
+                            inner: candidate_inner,
+                        }
+                        if *candidate_outer == outer
+                            && *candidate_inner == inner
+                    )
+                }),
+
+                _ => false,
+            }
+        });
+
+        assert!(found);
     }
 }
