@@ -1,17 +1,464 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+const SHOOT_DISTANCE: usize = 42;
 const MAX_SIZE: usize = 30;
+use std::collections::BTreeMap;
+
+pub type IntegerCountMap = BTreeMap<Integer, Integer>;
+
+fn color_counts_grid(grid: &Grid) -> IntegerCountMap {
+    let mut counts = IntegerCountMap::new();
+
+    for row in grid {
+        for &color in row {
+            *counts.entry(color).or_insert(0) += 1;
+        }
+    }
+
+    counts
+}
+
+fn color_counts_object(object: &Object) -> IntegerCountMap {
+    let mut counts = IntegerCountMap::new();
+
+    for &(color, _) in object {
+        *counts.entry(color).or_insert(0) += 1;
+    }
+
+    counts
+}
+
+#[primitive("colorcount")]
+pub fn colorcount_grid(grid: Grid, value: Integer) -> Integer {
+    grid.iter()
+        .flatten()
+        .filter(|&&color| color == value)
+        .count() as Integer
+}
+
+#[primitive("colorcount")]
+pub fn colorcount_object(object: Object, value: Integer) -> Integer {
+    object
+        .iter()
+        .filter(|&&(color, _)| color == value)
+        .count() as Integer
+}
+
+fn most_common_color(counts: IntegerCountMap) -> Integer {
+    counts
+        .into_iter()
+        .max_by(|(color_a, count_a), (color_b, count_b)| {
+            count_a
+                .cmp(count_b)
+                .then_with(|| color_b.cmp(color_a))
+        })
+        .map(|(color, _)| color)
+        .expect("Wrong value")
+}
+
+fn least_common_color(counts: IntegerCountMap) -> Integer {
+    counts
+        .into_iter()
+        .min_by(|(color_a, count_a), (color_b, count_b)| {
+            count_a
+                .cmp(count_b)
+                .then_with(|| color_a.cmp(color_b))
+        })
+        .map(|(color, _)| color)
+        .expect("Wrong value")
+}
+
+#[primitive("mostcolor")]
+pub fn mostcolor_grid(grid: Grid) -> Integer {
+    most_common_color(color_counts_grid(&grid))
+}
+
+#[primitive("mostcolor")]
+pub fn mostcolor_object(object: Object) -> Integer {
+    most_common_color(color_counts_object(&object))
+}
+
+#[primitive("leastcolor")]
+pub fn leastcolor_grid(grid: Grid) -> Integer {
+    least_common_color(color_counts_grid(&grid))
+}
+
+#[primitive("leastcolor")]
+pub fn leastcolor_object(object: Object) -> Integer {
+    least_common_color(color_counts_object(&object))
+}
+
+fn in_bounds(
+    i: Integer,
+    j: Integer,
+    h: usize,
+    w: usize,
+) -> Option<(usize, usize)> {
+    if i < 0 || j < 0 {
+        return None;
+    }
+
+    let i = i as usize;
+    let j = j as usize;
+
+    if i < h && j < w {
+        Some((i, j))
+    } else {
+        None
+    }
+}
+
+#[primitive("underfill")]
+pub fn underfill_indices(
+    grid: Grid,
+    value: Integer,
+    patch: Indices,
+) -> Grid {
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("underfill received wrong height");
+    }
+
+    let w = grid[0].len();
+    let bg = mostcolor_grid(grid.clone());
+
+    let mut result = grid.clone();
+
+    for &(i, j) in &patch {
+        if let Some((i, j)) = in_bounds(i, j, h, w)
+            && result[i as usize][j as usize] == bg
+        {
+            result[i as usize][j as usize] = value;
+        }
+    }
+
+    if result == grid {
+        panic!("underfill produced identity");
+    }
+
+    result
+}
+
+#[primitive("underpaint")]
+pub fn underpaint(
+    grid: Grid,
+    object: Object,
+) -> Grid {
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("underpaint received wrong height");
+    }
+
+    let w = grid[0].len();
+    let bg = mostcolor_grid(grid.clone());
+
+    let mut result = grid.clone();
+
+    for &(value, (i, j)) in &object {
+        if let Some((i, j)) = in_bounds(i, j, h, w)
+            && result[i as usize][j as usize] == bg
+        {
+            result[i as usize][j as usize] = value;
+        }
+    }
+
+    if result == grid {
+        panic!("underpaint produced identity");
+    }
+
+    result
+}
+
+#[primitive("paint")]
+pub fn paint(
+    grid: Grid,
+    object: Object,
+) -> Grid {
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("paint received wrong height");
+    }
+
+    let w = grid[0].len();
+
+    let mut result = grid.clone();
+
+    for &(value, (i, j)) in &object {
+        if let Some((i, j)) = in_bounds(i, j, h, w)
+        {
+            result[i as usize][j as usize] = value;
+        }
+    }
+
+    if result == grid {
+        panic!("paint produced identity");
+    }
+
+    result
+}
+
+#[primitive("fill")]
+pub fn fill_indices(
+    grid: Grid,
+    value: Integer,
+    patch: Indices,
+) -> Grid {
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("fill received wrong height");
+    }
+
+    let w = grid[0].len();
+
+    let mut result = grid.clone();
+
+    for &(i, j) in &patch {
+        if let Some((i, j)) = in_bounds(i, j, h, w)
+        {
+            result[i as usize][j as usize] = value;
+        }
+    }
+
+    if result == grid {
+        panic!("fill produced identity");
+    }
+
+    result
+}
+
+#[primitive("fill")]
+pub fn fill_object(
+    grid: Grid,
+    value: Integer,
+    object: Object,
+) -> Grid {
+    fill_indices(
+        grid,
+        value,
+        toindices_object(object),
+    )
+}
+
+fn cover_with_indices(grid: Grid, patch: Indices
+) -> Grid {
+    fill_indices(grid.clone(), mostcolor_grid(grid), patch)
+}
+
+#[primitive("cover")]
+pub fn cover_indices(grid: Grid, patch: Indices) -> Grid {
+    cover_with_indices(grid, patch)
+}
+
+#[primitive("cover")]
+pub fn cover_object(grid: Grid, object: Object) -> Grid {
+    cover_with_indices(grid, toindices_object(object))
+}
+
+#[primitive("connect")]
+pub fn connect(
+    a: IntegerTuple,
+    b: IntegerTuple,
+) -> Indices {
+    let (ai, aj) = a;
+    let (bi, bj) = b;
+
+    if (bi - ai).abs() > (SHOOT_DISTANCE * MAX_SIZE).try_into().unwrap()
+        || (bj - aj).abs() > (SHOOT_DISTANCE * MAX_SIZE).try_into().unwrap()
+    {
+        panic!("connect received wrong delta");
+    }
+
+    let (di, dj) = if ai == bi {
+        (0, if bj > aj { 1 } else { -1 })
+    } else if aj == bj {
+        (if bi > ai { 1 } else { -1 }, 0)
+    } else if (bi - ai).abs() == (bj - aj).abs() {
+        (
+            if bi > ai { 1 } else { -1 },
+            if bj > aj { 1 } else { -1 },
+        )
+    } else {
+        panic!("connect received wrong case");
+    };
+
+    let mut result = Indices::new();
+
+    let mut i = ai;
+    let mut j = aj;
+
+    loop {
+        result.insert((i, j));
+
+        if i == bi && j == bj {
+            break;
+        }
+
+        i += di;
+        j += dj;
+    }
+
+    result
+}
+
+fn corners_from_indices(indices: Indices) -> Indices {
+    let mut result = Indices::new();
+
+    result.insert(ulcorner(indices.clone()));
+    result.insert(urcorner(indices.clone()));
+    result.insert(llcorner(indices.clone()));
+    result.insert(lrcorner(indices));
+
+    result
+}
+
+#[primitive("corners")]
+pub fn corners_object(object: Object) -> Indices {
+    corners_from_indices(toindices_object(object))
+}
+
+#[primitive("corners")]
+pub fn corners_indices(indices: Indices) -> Indices {
+    corners_from_indices(indices)
+}
+
+#[primitive("index")]
+pub fn index(
+    grid: Grid,
+    loc: IntegerTuple,
+) -> Integer {
+    let (i, j) = loc;
+
+    if i < 0 || j < 0 {
+        panic!("index received negative i or j");
+    }
+
+    let i = i as usize;
+    let j = j as usize;
+
+    let h = grid.len();
+
+    if h == 0 || i >= h {
+        panic!("index received wrong height");
+    }
+
+    let w = grid[i].len();
+
+    if j >= w {
+        panic!("index received wrong width");
+    }
+
+    grid[i][j]
+}
+
+#[primitive("canvas")]
+pub fn canvas(
+    value: Integer,
+    dimensions: IntegerTuple,
+) -> Grid {
+    let (h, w) = dimensions;
+
+    if h <= 0 || w <= 0 {
+        panic!("canvas received wrong height or width");
+    }
+
+    vec![vec![value; w as usize]; h as usize]
+}
+
+#[primitive("position")]
+pub fn position_indices_object(
+    a: Indices,
+    b: Object,
+) -> IntegerTuple {
+    position_indices(
+        a,
+        toindices_object(b),
+    )
+}
+
+#[primitive("position")]
+pub fn position_object_indices(
+    a: Object,
+    b: Indices,
+) -> IntegerTuple {
+    position_indices(
+        toindices_object(a),
+        b,
+    )
+}
+
+#[primitive("position")]
+pub fn position_objects(
+    a: Object,
+    b: Object,
+) -> IntegerTuple {
+    position_indices(
+        toindices_object(a),
+        toindices_object(b),
+    )
+}
+
+#[primitive("position")]
+fn position_indices(
+    a: Indices,
+    b: Indices,
+) -> IntegerTuple {
+    let (ia, ja) = center_indices(a);
+    let (ib, jb) = center_indices(b);
+
+    if ia == ib {
+        (0, if ja < jb { 1 } else { -1 })
+    } else if ja == jb {
+        (if ia < ib { 1 } else { -1 }, 0)
+    } else if ia < ib {
+        (1, if ja < jb { 1 } else { -1 })
+    } else {
+        (-1, if ja < jb { 1 } else { -1 })
+    }
+}
+
+fn center_from_bounds(
+    um: Integer,
+    h: Integer,
+    lm: Integer,
+    w: Integer,
+) -> IntegerTuple {
+    (um + h / 2, lm + w / 2)
+}
+
+#[primitive("center")]
+pub fn center_object(object: Object) -> IntegerTuple {
+    center_from_bounds(
+        uppermost_object(object.clone()),
+        height_object(object.clone()),
+        leftmost_object(object.clone()),
+        width_object(object),
+    )
+}
+
+#[primitive("center")]
+pub fn center_indices(indices: Indices) -> IntegerTuple {
+    center_from_bounds(
+        uppermost_indices(indices.clone()),
+        height_indices(indices.clone()),
+        leftmost_indices(indices.clone()),
+        width_indices(indices),
+    )
+}
 
 #[primitive("hsplit")]
 pub fn hsplit(grid: Grid, n: Integer) -> GridVector {
     if n <= 0 {
-        panic!("Wrong value");
+        panic!("hsplit received wrong n");
     }
 
     let h = grid.len();
     if h == 0 {
-        panic!("Wrong value");
+        panic!("hsplit received wrong height");
     }
 
     let w = grid[0].len();
@@ -38,12 +485,12 @@ pub fn hsplit(grid: Grid, n: Integer) -> GridVector {
 #[primitive("vsplit")]
 pub fn vsplit(grid: Grid, n: Integer) -> GridVector {
     if n <= 0 {
-        panic!("Wrong value");
+        panic!("vsplit received wrong n");
     }
 
     let h = grid.len();
     if h == 0 {
-        panic!("Wrong value");
+        panic!("vsplit received wrong height");
     }
 
     let w = grid[0].len();
@@ -72,13 +519,13 @@ pub fn cellwise(a: Grid, b: Grid, fallback: Integer) -> Grid {
     let h = a.len();
 
     if h == 0 || b.len() != h {
-        panic!("Wrong value");
+        panic!("cellwise received wrong height");
     }
 
     let w = a[0].len();
 
     if w == 0 || b.iter().any(|row| row.len() != w) {
-        panic!("Wrong value");
+        panic!("cellwise received wrong width");
     }
 
     let mut result = vec![vec![fallback; w]; h];
@@ -94,7 +541,7 @@ pub fn cellwise(a: Grid, b: Grid, fallback: Integer) -> Grid {
     }
 
     if result == a {
-        panic!("Wrong value");
+        panic!("cellwise produced identity");
     }
 
     result
@@ -117,7 +564,7 @@ pub fn replace(
     }
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("replace produced identity");
     }
 
     result
@@ -142,7 +589,7 @@ pub fn switch(
     }
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("switch produced identity");
     }
 
     result
@@ -151,13 +598,13 @@ pub fn switch(
 #[primitive("hupscale")]
 pub fn hupscale(grid: Grid, factor: Integer) -> Grid {
     if factor <= 1 || factor > 10 {
-        panic!("Wrong value");
+        panic!("hupscale received wrong factor");
     }
 
     if grid.len() > MAX_SIZE
         || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
     {
-        panic!("Wrong value");
+        panic!("hupscale received wrong grid");
     }
 
     let result: Grid = grid
@@ -170,7 +617,7 @@ pub fn hupscale(grid: Grid, factor: Integer) -> Grid {
         .collect();
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("hupscale produced identity");
     }
 
     result
@@ -179,13 +626,13 @@ pub fn hupscale(grid: Grid, factor: Integer) -> Grid {
 #[primitive("vupscale")]
 pub fn vupscale(grid: Grid, factor: Integer) -> Grid {
     if factor <= 1 || factor > 10 {
-        panic!("Wrong value");
+        panic!("vupscale received wrong factor");
     }
 
     if grid.len() > MAX_SIZE
         || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
     {
-        panic!("Wrong value");
+        panic!("vupscale received wrong grid");
     }
 
     let mut result =
@@ -198,7 +645,7 @@ pub fn vupscale(grid: Grid, factor: Integer) -> Grid {
     }
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("vupscale produced identity");
     }
 
     result
@@ -209,7 +656,7 @@ fn upscale_grid(grid: Grid, factor: Integer) -> Grid {
     if grid.len() > MAX_SIZE
         || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
     {
-        panic!("Wrong value");
+        panic!("upscale received wrong grid");
     }
 
     let factor = factor as usize;
@@ -233,7 +680,7 @@ fn upscale_grid(grid: Grid, factor: Integer) -> Grid {
     }
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("upscale produced identity");
     }
 
     result
@@ -283,7 +730,7 @@ fn upscale_object(
 #[primitive("downscale")]
 pub fn downscale(grid: Grid, factor: Integer) -> Grid {
     if factor <= 1 {
-        panic!("Wrong value");
+        panic!("downscale received wrong factor");
     }
 
     let factor = factor as usize;
@@ -291,7 +738,7 @@ pub fn downscale(grid: Grid, factor: Integer) -> Grid {
     let h = grid.len();
 
     if h == 0 {
-        panic!("Wrong value");
+        panic!("downscale received wrong height");
     }
 
     let w = grid[0].len();
@@ -309,7 +756,7 @@ pub fn downscale(grid: Grid, factor: Integer) -> Grid {
     }
 
     if result == grid {
-        panic!("Wrong value");
+        panic!("downscale produced identity");
     }
 
     result
@@ -318,7 +765,7 @@ pub fn downscale(grid: Grid, factor: Integer) -> Grid {
 #[primitive("tophalf")]
 pub fn tophalf(grid: Grid) -> Grid {
     if grid.is_empty() {
-        panic!("Wrong value");
+        panic!("tophalf received empty grid");
     }
 
     let mid = grid.len() / 2;
@@ -329,7 +776,7 @@ pub fn tophalf(grid: Grid) -> Grid {
 #[primitive("bottomhalf")]
 pub fn bottomhalf(grid: Grid) -> Grid {
     if grid.is_empty() {
-        panic!("Wrong value");
+        panic!("bottomhalf received empty grid");
     }
 
     let mid = grid.len().div_ceil(2);
@@ -339,13 +786,7 @@ pub fn bottomhalf(grid: Grid) -> Grid {
 
 #[primitive("lefthalf")]
 pub fn lefthalf(grid: Grid) -> Grid {
-    let result = rot270(tophalf(rot90(grid.clone())));
-
-    if grid == result {
-        panic!("Wrong value");
-    }
-
-    result
+    rot270(tophalf(rot90(grid.clone())))
 }
 
 #[primitive("righthalf")]
@@ -356,14 +797,14 @@ pub fn righthalf(grid: Grid) -> Grid {
 #[primitive("trim")]
 pub fn trim(grid: Grid) -> Grid {
     if grid.len() < 3 {
-        panic!("Wrong value");
+        panic!("trim received wrong grid");
     }
 
     grid[1..grid.len() - 1]
         .iter()
         .map(|row| {
             if row.len() < 3 {
-                panic!("Wrong value");
+                panic!("trim received wrong grid");
             }
 
             row[1..row.len() - 1].to_vec()
@@ -444,7 +885,7 @@ pub fn branch_boolean(condition: Boolean, a: Boolean, b: Boolean) -> Boolean {
 #[primitive("pair")]
 pub fn pair(a: IntegerVector, b: IntegerVector) -> Grid {
     if a.len() != b.len() {
-        panic!("Wrong value");
+        panic!("pair received wrong values");
     }
 
     a.into_iter()
