@@ -6194,12 +6194,14 @@ mod tests
                     "GRIDS",
                     Value::GridVector(vec![
                         vec![
-                            vec![1, 2],
-                            vec![3, 4],
+                            vec![1, 2, 5],
+                            vec![3, 4, 6],
+                            vec![5, 6, 3],
                         ],
                         vec![
-                            vec![5, 6],
-                            vec![7, 8],
+                            vec![5, 6, 3],
+                            vec![7, 8, 4],
+                            vec![1, 2, 5],
                         ],
                     ]),
                 ),
@@ -6248,12 +6250,14 @@ mod tests
                 if grids
                     == vec![
                         vec![
-                            vec![1, 2],
-                            vec![3, 4],
+                            vec![1, 2, 5],
+                            vec![3, 4, 6],
+                            vec![5, 6, 3],
                         ],
                         vec![
-                            vec![5, 6],
-                            vec![7, 8],
+                            vec![5, 6, 3],
+                            vec![7, 8, 4],
+                            vec![1, 2, 5],
                         ],
                     ]
                 {
