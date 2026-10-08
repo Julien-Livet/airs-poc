@@ -241,6 +241,10 @@ fn type_tokens(
             crate::registry::Type::ObjectVector
         },
 
+        "IntegerSet" => quote! {
+            crate::registry::Type::IntegerSet
+        },
+
         other => {
             return Err(syn::Error::new_spanned(
                 &segment.ident,
