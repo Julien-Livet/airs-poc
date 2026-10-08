@@ -30,6 +30,11 @@ macro_rules! define_callable_primitive {
     };
 }
 
+define_callable_primitive!(righthalf_callable_entry, righthalf_callable_apply, "righthalf"); //right half of grid
+define_callable_primitive!(lefthalf_callable_entry, lefthalf_callable_apply, "lefthalf"); //left half of grid
+define_callable_primitive!(bottomhalf_callable_entry, bottomhalf_callable_apply, "bottomhalf"); //lower half of grid
+define_callable_primitive!(tophalf_callable_entry, tophalf_callable_apply, "tophalf"); //upper half of grid
+define_callable_primitive!(trim_callable_entry, trim_callable_apply, "trim"); //trim border of grid
 define_callable_primitive!(branch_callable_entry, branch_callable_apply, "branch"); //if else branching
 define_callable_primitive!(pair_callable_entry, pair_callable_apply, "pair"); //zipping of two tuples
 define_callable_primitive!(astuple_callable_entry, astuple_callable_apply, "astuple"); //constructs a tuple
@@ -868,7 +873,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 181);
+        assert_eq!(PRIMITIVES.len(), 191);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
