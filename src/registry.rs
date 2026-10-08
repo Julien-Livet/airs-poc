@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::connection::Connection;
 use crate::types::*;
-use crate::function::Function;
+use crate::function::{Function, FunctionKind};
 
 macro_rules! define_callable_primitive {
     (
@@ -31,6 +31,9 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(compose_callable_entry, compose_callable_apply, "compose"); //function composition
+define_callable_primitive!(chain_callable_entry, chain_callable_apply, "chain"); //function composition with three functions
+define_callable_primitive!(fork_callable_entry, fork_callable_apply, "fork"); //creates a wrapper function
 define_callable_primitive!(objects_callable_entry, objects_callable_apply, "objects"); //objects occurring on the grid
 define_callable_primitive!(partition_callable_entry, partition_callable_apply, "partition"); //each cell with the same value part of the same object
 define_callable_primitive!(fgpartition_callable_entry, fgpartition_callable_apply, "fgpartition"); //each cell with the same value part of the same object without background
@@ -194,6 +197,9 @@ pub enum DynamicPrimitive {
     Apply,
     Rbind,
     HistoricalApply,
+    Fork,
+    Compose,
+    Chain,
 }
 
 impl DynamicPrimitive {
@@ -203,8 +209,97 @@ impl DynamicPrimitive {
             DynamicPrimitive::Rbind => "rbind",
             DynamicPrimitive::Apply => "apply",
             DynamicPrimitive::HistoricalApply => "apply",
+            DynamicPrimitive::Fork => "fork",
+            DynamicPrimitive::Compose => "compose",
+            DynamicPrimitive::Chain => "chain",
         }
     }
+}
+
+pub fn chain_value(
+    h: &Value,
+    g: &Value,
+    f: &Value,
+) -> Result<Value, String> {
+    let h = match h {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "chain expects h to be a Function".to_string()
+            );
+        }
+    };
+
+    let g = match g {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "chain expects g to be a Function".to_string()
+            );
+        }
+    };
+
+    let f = match f {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "chain expects f to be a Function".to_string()
+            );
+        }
+    };
+
+    Ok(Value::Function(Box::new(Function {
+        inputs: f.inputs.clone(),
+        body: f.body.clone(),
+        kind: FunctionKind::Chained {
+            h: Box::new(*h.clone()),
+            g: Box::new(*g.clone()),
+            f: Box::new(*f.clone()),
+        },
+    })))
+}
+
+pub fn fork_value(
+    outer: &Value,
+    a: &Value,
+    b: &Value,
+) -> Result<Value, String> {
+    let outer = match outer {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "fork expects outer to be a Function".to_string()
+            );
+        }
+    };
+
+    let a = match a {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "fork expects a to be a Function".to_string()
+            );
+        }
+    };
+
+    let b = match b {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "fork expects b to be a Function".to_string()
+            );
+        }
+    };
+
+    Ok(Value::Function(Box::new(Function {
+        inputs: a.inputs.clone(),
+        body: a.body.clone(),
+        kind: FunctionKind::Forked {
+            outer: Box::new(*outer.clone()),
+            a: Box::new(*a.clone()),
+            b: Box::new(*b.clone()),
+        },
+    })))
 }
 
 pub fn lbind_value(
@@ -259,6 +354,38 @@ pub fn apply_value(
         function,
         vec![argument.clone()],
     )
+}
+
+pub fn compose_value(
+    outer: &Value,
+    inner: &Value,
+) -> Result<Value, String> {
+    let outer = match outer {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "compose expects outer to be a Function".to_string()
+            );
+        }
+    };
+
+    let inner = match inner {
+        Value::Function(function) => function,
+        _ => {
+            return Err(
+                "compose expects inner to be a Function".to_string()
+            );
+        }
+    };
+
+    Ok(Value::Function(Box::new(Function {
+        inputs: inner.inputs.clone(),
+        body: inner.body.clone(),
+        kind: FunctionKind::Composed {
+            outer: Box::new(*outer.clone()),
+            inner: Box::new(*inner.clone()),
+        },
+    })))
 }
 
 pub fn apply_values(
@@ -428,6 +555,128 @@ pub struct FunctionTypeRegistry {
 }
 
 impl FunctionTypeRegistry {
+    pub fn compose_candidates(
+        &self,
+    ) -> Vec<(FunctionTypeId, FunctionTypeId)> {
+        let mut candidates = Vec::new();
+
+        for (outer_id, outer) in self.all_types() {
+            if outer.inputs.len() != 1 {
+                continue;
+            }
+
+            for (inner_id, inner) in self.all_types() {
+                if inner.output == outer.inputs[0] {
+                    candidates.push((
+                        outer_id,
+                        inner_id,
+                    ));
+                }
+            }
+        }
+
+        candidates
+    }
+
+    pub fn chain_candidates(
+        &self,
+    ) -> Vec<(
+        FunctionTypeId,
+        FunctionTypeId,
+        FunctionTypeId,
+    )> {
+        let mut candidates = Vec::new();
+
+        for (f_id, f) in self.all_types() {
+            for (g_id, g) in self.all_types() {
+                if g.inputs.len() != 1 {
+                    continue;
+                }
+
+                if g.inputs[0] != f.output {
+                    continue;
+                }
+
+                for (h_id, h) in self.all_types() {
+                    if h.inputs.len() != 1 {
+                        continue;
+                    }
+
+                    if h.inputs[0] != g.output {
+                        continue;
+                    }
+
+                    candidates.push((
+                        f_id,
+                        g_id,
+                        h_id,
+                    ));
+                }
+            }
+        }
+
+        candidates
+    }
+
+    pub fn fork_candidates(
+        &self,
+    ) -> Vec<(
+        FunctionTypeId,
+        FunctionTypeId,
+        FunctionTypeId,
+    )> {
+        let mut candidates = Vec::new();
+
+        for (a_id, a) in self.all_types() {
+            for (b_id, b) in self.all_types() {
+                if a.inputs != b.inputs {
+                    continue;
+                }
+
+                for (outer_id, outer) in self.all_types() {
+                    if outer.inputs.len() != 2 {
+                        continue;
+                    }
+
+                    if outer.inputs[0] != a.output
+                        || outer.inputs[1] != b.output
+                    {
+                        continue;
+                    }
+
+                    candidates.push((
+                        outer_id,
+                        a_id,
+                        b_id,
+                    ));
+                }
+            }
+        }
+
+        candidates
+    }
+
+    fn function(
+        &self,
+        ty: Type,
+        name: &str,
+    ) -> Result<&FunctionType, String> {
+        let id = match ty {
+            Type::Function(id) => id,
+            _ => {
+                return Err(format!(
+                    "expected Function for {}, got {:?}",
+                    name,
+                    ty
+                ));
+            }
+        };
+
+        self.get(id).ok_or_else(|| {
+            format!("unknown function type {:?} for {}", id, name)
+        })
+    }
+
     pub fn inputs(&self, id: FunctionTypeId) -> Option<&[Type]> {
         self.get(id).map(|function| {
             function.inputs.as_slice()
@@ -1038,11 +1287,11 @@ mod tests
     use super::*;
     use crate::connection::Connection;
     use crate::signature::InputSpec;
-    use crate::function::Function;
+    use crate::environment::InputEnvironment;
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 437);
+        assert_eq!(PRIMITIVES.len(), 440);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
@@ -3449,5 +3698,232 @@ mod tests
                 );
             }
         }
+    }
+
+    #[test]
+    fn compose_callable_primitives_builds_composed_function() {
+        let add = Connection::callable_primitive(
+            &crate::primitives::add_entry,
+        );
+
+        let environment = InputEnvironment::new();
+
+        let outer = add
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let inner = add
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let composed = compose_value(
+            &outer,
+            &inner,
+        )
+        .unwrap();
+
+        match composed {
+            Value::Function(function) => {
+                assert!(matches!(
+                    function.kind,
+                    FunctionKind::Composed { .. }
+                ));
+            }
+            other => panic!(
+                "expected Function, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn fork_callable_primitives_builds_forked_function() {
+        let add = Connection::callable_primitive(
+            &crate::primitives::add_entry,
+        );
+
+        let environment = InputEnvironment::new();
+
+        let outer = add
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let a = add
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let b = add
+            .output_with_inputs(&environment)
+            .unwrap();
+
+        let forked = crate::registry::fork_value(
+            &outer,
+            &a,
+            &b,
+        )
+        .unwrap();
+
+        match forked {
+            Value::Function(function) => {
+                assert!(matches!(
+                    function.kind,
+                    FunctionKind::Forked { .. }
+                ));
+            }
+
+            other => panic!(
+                "expected Function, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn chain_identity_evaluates() {
+        let identity = Value::Function(Box::new(
+            Function {
+                inputs: vec![],
+                body: Connection::Constant {
+                    name: "identity".to_string(),
+                    value: Value::Integer(0),
+                },
+                kind: FunctionKind::PrimitiveFamily("identity"),
+            },
+        ));
+
+        let chained = crate::registry::chain_value(
+            &identity,
+            &identity,
+            &identity,
+        )
+        .unwrap();
+
+        let result = crate::registry::apply_values(
+            &chained,
+            vec![Value::Integer(42)],
+        )
+        .unwrap();
+
+        match result {
+            Value::Integer(value) => {
+                assert_eq!(value, 42);
+            }
+            other => {
+                panic!(
+                    "expected Integer(42), got {:?}",
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fork_candidates_are_type_compatible() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let a = registry.intern(
+            &[Type::Grid],
+            Type::Integer,
+        );
+
+        let b = registry.intern(
+            &[Type::Grid],
+            Type::Boolean,
+        );
+
+        let outer = registry.intern(
+            &[Type::Integer, Type::Boolean],
+            Type::Object,
+        );
+
+        let bad_outer = registry.intern(
+            &[Type::Boolean, Type::Integer],
+            Type::Object,
+        );
+
+        let candidates = registry.fork_candidates();
+
+        assert!(candidates.contains(&(
+            outer,
+            a,
+            b,
+        )));
+
+        assert!(!candidates.contains(&(
+            bad_outer,
+            a,
+            b,
+        )));
+    }
+
+    #[test]
+    fn chain_candidates_are_type_compatible() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let f = registry.intern(
+            &[Type::Grid],
+            Type::Integer,
+        );
+
+        let g = registry.intern(
+            &[Type::Integer],
+            Type::Boolean,
+        );
+
+        let h = registry.intern(
+            &[Type::Boolean],
+            Type::Object,
+        );
+
+        let bad_h = registry.intern(
+            &[Type::Integer],
+            Type::Object,
+        );
+
+        let candidates = registry.chain_candidates();
+
+        assert!(candidates.contains(&(
+            f,
+            g,
+            h,
+        )));
+
+        assert!(!candidates.contains(&(
+            f,
+            g,
+            bad_h,
+        )));
+    }
+
+    #[test]
+    fn compose_candidates_are_type_compatible() {
+        let mut registry = FunctionTypeRegistry::new();
+
+        let inner = registry.intern(
+            &[Type::Grid],
+            Type::Integer,
+        );
+
+        let compatible_outer = registry.intern(
+            &[Type::Integer],
+            Type::Boolean,
+        );
+
+        let incompatible_outer = registry.intern(
+            &[Type::Boolean],
+            Type::Boolean,
+        );
+
+        let candidates = registry.compose_candidates();
+
+        assert!(candidates.contains(&(
+            compatible_outer,
+            inner,
+        )));
+
+        assert!(!candidates.contains(&(
+            incompatible_outer,
+            inner,
+        )));
     }
 }
