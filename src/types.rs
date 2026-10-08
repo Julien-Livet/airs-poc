@@ -14,3 +14,4 @@ pub type TupleVector = Vec<IntegerTuple>;
 pub type ObjectVector = Vec<Object>;
 
 pub type Objects = BTreeSet<Object>;
+pub type IntegerSet = BTreeSet<Integer>;
