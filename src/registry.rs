@@ -30,6 +30,10 @@ macro_rules! define_callable_primitive {
     };
 }
 
+define_callable_primitive!(downscale_callable_entry, downscale_callable_apply, "downscale"); //downscale grid
+define_callable_primitive!(upscale_callable_entry, upscale_callable_apply, "upscale"); //upscale object or grid
+define_callable_primitive!(vupscale_callable_entry, vupscale_callable_apply, "vupscale"); //upscale grid vertically
+define_callable_primitive!(hupscale_callable_entry, hupscale_callable_apply, "hupscale"); //upscale grid horizontally
 define_callable_primitive!(righthalf_callable_entry, righthalf_callable_apply, "righthalf"); //right half of grid
 define_callable_primitive!(lefthalf_callable_entry, lefthalf_callable_apply, "lefthalf"); //left half of grid
 define_callable_primitive!(bottomhalf_callable_entry, bottomhalf_callable_apply, "bottomhalf"); //lower half of grid
@@ -873,7 +877,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 191);
+        assert_eq!(PRIMITIVES.len(), 200);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
