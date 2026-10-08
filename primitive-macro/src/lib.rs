@@ -245,6 +245,22 @@ fn type_tokens(
             crate::registry::Type::IntegerSet
         },
 
+        "IndicesSet" => quote! {
+            crate::registry::Type::IndicesSet
+        },
+
+        "ObjectsVector" => quote! {
+            crate::registry::Type::ObjectsVector
+        },
+
+        "IndicesVector" => quote! {
+            crate::registry::Type::IndicesVector
+        },
+
+        "BooleanVector" => quote! {
+            crate::registry::Type::BooleanVector
+        },
+
         other => {
             return Err(syn::Error::new_spanned(
                 &segment.ident,
