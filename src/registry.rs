@@ -30,6 +30,15 @@ macro_rules! define_callable_primitive {
     };
 }
 
+define_callable_primitive!(branch_callable_entry, branch_callable_apply, "branch"); //if else branching
+define_callable_primitive!(pair_callable_entry, pair_callable_apply, "pair"); //zipping of two tuples
+define_callable_primitive!(astuple_callable_entry, astuple_callable_apply, "astuple"); //constructs a tuple
+define_callable_primitive!(positive_callable_entry, positive_callable_apply, "positive"); //positive
+define_callable_primitive!(sign_callable_entry, sign_callable_apply, "sign"); //sign
+define_callable_primitive!(crement_callable_entry, crement_callable_apply, "crement"); //incrementing positive and decrementing negative
+define_callable_primitive!(dcrement_callable_entry, decrement_callable_apply, "decrement"); //decrementing
+define_callable_primitive!(increment_callable_entry, increment_callable_apply, "increment"); //incrementing
+define_callable_primitive!(greater_callable_entry, greater_callable_apply, "greater"); //greater
 define_callable_primitive!(halve_callable_entry, halve_callable_apply, "halve"); //scaling by one half
 define_callable_primitive!(double_callable_entry, double_callable_apply, "double"); //scaling by two
 define_callable_primitive!(even_callable_entry, even_callable_apply, "even"); //evenness
@@ -859,7 +868,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 153);
+        assert_eq!(PRIMITIVES.len(), 181);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
