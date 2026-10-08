@@ -236,6 +236,9 @@ pub enum DynamicPrimitiveJson {
     Apply,
     Rbind,
     HistoricalApply,
+    Fork,
+    Compose,
+    Chain,
 }
 
 impl From<DynamicPrimitive> for DynamicPrimitiveJson {
@@ -247,6 +250,9 @@ impl From<DynamicPrimitive> for DynamicPrimitiveJson {
             DynamicPrimitive::HistoricalApply => {
                 Self::HistoricalApply
             }
+            DynamicPrimitive::Fork => Self::Fork,
+            DynamicPrimitive::Compose => Self::Compose,
+            DynamicPrimitive::Chain => Self::Chain,
         }
     }
 }
@@ -260,6 +266,9 @@ impl From<DynamicPrimitiveJson> for DynamicPrimitive {
             DynamicPrimitiveJson::HistoricalApply => {
                 Self::HistoricalApply
             }
+            DynamicPrimitiveJson::Fork => Self::Fork,
+            DynamicPrimitiveJson::Compose => Self::Compose,
+            DynamicPrimitiveJson::Chain => Self::Chain,
         }
     }
 }
@@ -576,6 +585,112 @@ impl Connection {
             primitive,
             inputs,
         })
+    }
+
+    pub fn chain(
+        h: Connection,
+        g: Connection,
+        f: Connection,
+    ) -> Result<Self, String> {
+        if h.output_type() != Type::Callable {
+            return Err(format!(
+                "chain expects h to be Callable, got {:?}",
+                h.output_type()
+            ));
+        }
+
+        if g.output_type() != Type::Callable {
+            return Err(format!(
+                "chain expects g to be Callable, got {:?}",
+                g.output_type()
+            ));
+        }
+
+        if f.output_type() != Type::Callable {
+            return Err(format!(
+                "chain expects f to be Callable, got {:?}",
+                f.output_type()
+            ));
+        }
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Chain,
+            vec![
+                Box::new(h),
+                Box::new(g),
+                Box::new(f),
+            ],
+            Type::Callable,
+        ))
+    }
+
+    pub fn compose(
+        outer: Connection,
+        inner: Connection,
+    ) -> Result<Self, String> {
+        if outer.output_type() != Type::Callable {
+            return Err(format!(
+                "compose expects outer to be Callable, got {:?}",
+                outer.output_type()
+            ));
+        }
+
+        if inner.output_type() != Type::Callable {
+            return Err(format!(
+                "compose expects inner to be Callable, got {:?}",
+                inner.output_type()
+            ));
+        }
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Compose,
+            vec![
+                Box::new(outer),
+                Box::new(inner),
+            ],
+            Type::Callable,
+        ))
+    }
+
+    pub fn fork(
+        outer: Connection,
+        a: Connection,
+        b: Connection,
+    ) -> Result<Self, String> {
+        let outer_type = outer.output_type();
+        let a_type = a.output_type();
+        let b_type = b.output_type();
+
+        if outer_type != Type::Callable {
+            return Err(format!(
+                "fork expects outer to be Callable, got {:?}",
+                outer_type
+            ));
+        }
+
+        if a_type != Type::Callable {
+            return Err(format!(
+                "fork expects a to be Callable, got {:?}",
+                a_type
+            ));
+        }
+
+        if b_type != Type::Callable {
+            return Err(format!(
+                "fork expects b to be Callable, got {:?}",
+                b_type
+            ));
+        }
+
+        Ok(Self::dynamic(
+            DynamicPrimitive::Fork,
+            vec![
+                Box::new(outer),
+                Box::new(a),
+                Box::new(b),
+            ],
+            Type::Callable,
+        ))
     }
 
     pub fn historical_apply(
@@ -986,6 +1101,50 @@ impl Connection {
                         crate::registry::map_apply_value(
                             &values[0],
                             &values[1],
+                        )
+                    }
+
+                    DynamicPrimitive::Compose => {
+                        if values.len() != 2 {
+                            return Err(format!(
+                                "compose expects 2 arguments, got {}",
+                                values.len()
+                            ));
+                        }
+
+                        crate::registry::compose_value(
+                            &values[0],
+                            &values[1],
+                        )
+                    }
+
+                    DynamicPrimitive::Fork => {
+                        if values.len() != 3 {
+                            return Err(format!(
+                                "fork expects 3 arguments, got {}",
+                                values.len()
+                            ));
+                        }
+
+                        crate::registry::fork_value(
+                            &values[0],
+                            &values[1],
+                            &values[2],
+                        )
+                    }
+
+                    DynamicPrimitive::Chain => {
+                        if values.len() != 3 {
+                            return Err(format!(
+                                "chain expects 3 arguments, got {}",
+                                values.len()
+                            ));
+                        }
+
+                        crate::registry::chain_value(
+                            &values[0],
+                            &values[1],
+                            &values[2],
                         )
                     }
                 }
