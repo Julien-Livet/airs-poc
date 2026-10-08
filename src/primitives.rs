@@ -1,6 +1,175 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+const MAX_SIZE: usize = 30;
+
+#[primitive("hupscale")]
+pub fn hupscale(grid: Grid, factor: Integer) -> Grid {
+    if factor <= 1 || factor > 10 {
+        panic!("Wrong value");
+    }
+
+    if grid.len() > MAX_SIZE
+        || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
+    {
+        panic!("Wrong value");
+    }
+
+    let result: Grid = grid
+        .iter()
+        .map(|row| {
+            row.iter()
+                .flat_map(|&value| std::iter::repeat_n(value, factor as usize))
+                .collect()
+        })
+        .collect();
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("vupscale")]
+pub fn vupscale(grid: Grid, factor: Integer) -> Grid {
+    if factor <= 1 || factor > 10 {
+        panic!("Wrong value");
+    }
+
+    if grid.len() > MAX_SIZE
+        || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
+    {
+        panic!("Wrong value");
+    }
+
+    let mut result =
+        Vec::with_capacity(grid.len() * factor as usize);
+
+    for row in &grid {
+        for _ in 0..factor {
+            result.push(row.clone());
+        }
+    }
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("upscale")]
+fn upscale_grid(grid: Grid, factor: Integer) -> Grid {
+    if grid.len() > MAX_SIZE
+        || grid.first().map_or(false, |row| row.len() > MAX_SIZE)
+    {
+        panic!("Wrong value");
+    }
+
+    let factor = factor as usize;
+
+    let mut result =
+        Vec::with_capacity(grid.len() * factor);
+
+    for row in &grid {
+        let mut new_row =
+            Vec::with_capacity(row.len() * factor);
+
+        for &value in row {
+            for _ in 0..factor {
+                new_row.push(value);
+            }
+        }
+
+        for _ in 0..factor {
+            result.push(new_row.clone());
+        }
+    }
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("upscale")]
+fn upscale_object(
+    object: Object,
+    factor: Integer,
+) -> Object {
+    if object.is_empty() {
+        return Object::new();
+    }
+
+    let (di_inv, dj_inv) = ulcorner(toindices_object(object.clone()));
+
+    let di = -di_inv;
+    let dj = -dj_inv;
+
+    let normalized = shift_object(
+        object,
+        (di, dj),
+    );
+
+    let mut result = Object::new();
+
+    for &(value, (i, j)) in &normalized {
+        for io in 0..factor {
+            for jo in 0..factor {
+                result.insert((
+                    value,
+                    (
+                        i * factor + io,
+                        j * factor + jo,
+                    ),
+                ));
+            }
+        }
+    }
+
+    shift_object(
+        result,
+        (di_inv, dj_inv),
+    )
+}
+
+#[primitive("downscale")]
+pub fn downscale(grid: Grid, factor: Integer) -> Grid {
+    if factor <= 1 {
+        panic!("Wrong value");
+    }
+
+    let factor = factor as usize;
+
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("Wrong value");
+    }
+
+    let w = grid[0].len();
+
+    let mut result = Vec::new();
+
+    for i in (0..h).step_by(factor) {
+        let mut row = Vec::new();
+
+        for j in (0..w).step_by(factor) {
+            row.push(grid[i][j]);
+        }
+
+        result.push(row);
+    }
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
 #[primitive("tophalf")]
 pub fn tophalf(grid: Grid) -> Grid {
     if grid.is_empty() {
