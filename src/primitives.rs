@@ -7,6 +7,203 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+#[primitive("square")]
+pub fn square_grid(grid: Grid) -> Boolean {
+    if grid.is_empty() {
+        panic!("square received empty grid");
+    }
+
+    let width = grid[0].len();
+
+    if grid.iter().any(|row| row.len() != width) {
+        panic!("square received wrong grid");
+    }
+
+    grid.len() == width
+}
+
+fn square_patch(
+    height: Integer,
+    width: Integer,
+    size: Integer,
+) -> Boolean {
+    height * width == size && height == width
+}
+
+#[primitive("square")]
+pub fn square_object(object: Object) -> Boolean {
+    let h = height_object(object.clone());
+    let w = width_object(object.clone());
+    let l = object.len() as Integer;
+
+    square_patch(h, w, l)
+}
+
+#[primitive("square")]
+pub fn square_indices(indices: Indices) -> Boolean {
+    let h = height_indices(indices.clone());
+    let w = width_indices(indices.clone());
+    let l = indices.len() as Integer;
+
+    square_patch(h, w, l)
+}
+
+fn vline_patch(
+    height: Integer,
+    width: Integer,
+    size: Integer,
+) -> Boolean {
+    height == size && width == 1
+}
+
+#[primitive("vline")]
+pub fn vline_object(object: Object) -> Boolean {
+    let h = height_object(object.clone());
+    let w = width_object(object.clone());
+    let l = object.len() as Integer;
+
+    vline_patch(h, w, l)
+}
+
+#[primitive("vline")]
+pub fn vline_indices(indices: Indices) -> Boolean {
+    let h = height_indices(indices.clone());
+    let w = width_indices(indices.clone());
+    let l = indices.len() as Integer;
+
+    vline_patch(h, w, l)
+}
+
+fn hline_patch(
+    height: Integer,
+    width: Integer,
+    size: Integer,
+) -> Boolean {
+    width == size && height == 1
+}
+
+#[primitive("hline")]
+pub fn hline_object(object: Object) -> Boolean {
+    let h = height_object(object.clone());
+    let w = width_object(object.clone());
+    let l = object.len() as Integer;
+
+    hline_patch(h, w, l)
+}
+
+#[primitive("hline")]
+pub fn hline_indices(indices: Indices) -> Boolean {
+    let h = height_indices(indices.clone());
+    let w = width_indices(indices.clone());
+    let l = indices.len() as Integer;
+
+    hline_patch(h, w, l)
+}
+
+#[primitive("dneighbors")]
+pub fn dneighbors(loc: IntegerTuple) -> Indices {
+    let (i, j) = loc;
+
+    let mut result = Indices::new();
+
+    result.insert((i - 1, j));
+    result.insert((i + 1, j));
+    result.insert((i, j - 1));
+    result.insert((i, j + 1));
+
+    result
+}
+
+#[primitive("ineighbors")]
+pub fn ineighbors(loc: IntegerTuple) -> Indices {
+    let (i, j) = loc;
+
+    let mut result = Indices::new();
+
+    result.insert((i - 1, j - 1));
+    result.insert((i - 1, j + 1));
+    result.insert((i + 1, j - 1));
+    result.insert((i + 1, j + 1));
+
+    result
+}
+
+#[primitive("neighbors")]
+pub fn neighbors(loc: IntegerTuple) -> Indices {
+    let mut result = dneighbors(loc);
+    result.extend(ineighbors(loc));
+
+    result
+}
+
+#[primitive("recolor")]
+pub fn recolor_indices(
+    value: Integer,
+    patch: Indices,
+) -> Object {
+    patch
+        .into_iter()
+        .map(|index| (value, index))
+        .collect()
+}
+
+#[primitive("recolor")]
+pub fn recolor_object(
+    value: Integer,
+    patch: Object,
+) -> Object {
+    recolor_indices(value, toindices_object(patch))
+}
+
+#[primitive("asobject")]
+pub fn asobject(grid: Grid) -> Object {
+    let mut result = Object::new();
+
+    for (i, row) in grid.iter().enumerate() {
+        for (j, &color) in row.iter().enumerate() {
+            result.insert((
+                color,
+                (i as Integer, j as Integer),
+            ));
+        }
+    }
+
+    result
+}
+
+#[primitive("toobject")]
+pub fn toobject_indices(patch: Indices, grid: Grid) -> Object {
+    let h = grid.len();
+
+    if h == 0 {
+        panic!("toobject received wrong height");
+    }
+
+    let w = grid[0].len();
+
+    let mut result = Object::new();
+
+    for &(i, j) in &patch {
+        if i >= 0
+            && (i as usize) < h
+            && j >= 0
+            && (j as usize) < w
+        {
+            result.insert((
+                grid[i as usize][j as usize],
+                (i, j),
+            ));
+        }
+    }
+
+    result
+}
+
+#[primitive("toobject")]
+pub fn toobject_object(patch: Object, grid: Grid) -> Object {
+    toobject_indices(toindices_object(patch), grid)
+}
+
 fn color_counts_grid(grid: &Grid) -> IntegerCountMap {
     let mut counts = IntegerCountMap::new();
 
