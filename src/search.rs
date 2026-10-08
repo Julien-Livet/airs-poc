@@ -2462,7 +2462,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 12);
+        assert_eq!(programs.len(), 13);
 
         assert!(
             programs.iter().any(|program| {
@@ -6272,14 +6272,14 @@ mod tests
                     "GRIDS",
                     Value::GridVector(vec![
                         vec![
-                            vec![1, 2, 5],
-                            vec![3, 4, 6],
-                            vec![5, 6, 3],
+                            vec![1, 1, 1],
+                            vec![1, 2, 1],
+                            vec![5, 1, 4],
                         ],
                         vec![
-                            vec![5, 6, 3],
-                            vec![7, 8, 4],
-                            vec![1, 2, 5],
+                            vec![2, 2, 2],
+                            vec![2, 3, 2],
+                            vec![5, 2, 4],
                         ],
                     ]),
                 ),
@@ -6328,14 +6328,14 @@ mod tests
                 if grids
                     == vec![
                         vec![
-                            vec![1, 2, 5],
-                            vec![3, 4, 6],
-                            vec![5, 6, 3],
+                            vec![1, 1, 1],
+                            vec![1, 2, 1],
+                            vec![5, 1, 4],
                         ],
                         vec![
-                            vec![5, 6, 3],
-                            vec![7, 8, 4],
-                            vec![1, 2, 5],
+                            vec![2, 2, 2],
+                            vec![2, 3, 2],
+                            vec![5, 2, 4],
                         ],
                     ]
                 {
