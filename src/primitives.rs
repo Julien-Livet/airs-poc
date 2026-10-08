@@ -7,6 +7,196 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+fn hmatching_indices(a: Indices, b: Indices) -> Boolean {
+    let rows: IntegerSet = a.into_iter().map(|(i, _)| i).collect();
+
+    b.into_iter().any(|(i, _)| rows.contains(&i))
+}
+
+#[primitive("hmatching")]
+pub fn hmatching_object_object(a: Object, b: Object) -> Boolean {
+    hmatching_indices(toindices_object(a), toindices_object(b))
+}
+
+#[primitive("hmatching")]
+pub fn hmatching_object_indices(a: Object, b: Indices) -> Boolean {
+    hmatching_indices(toindices_object(a), b)
+}
+
+#[primitive("hmatching")]
+pub fn hmatching_indices_object(a: Indices, b: Object) -> Boolean {
+    hmatching_indices(a, toindices_object(b))
+}
+
+#[primitive("hmatching")]
+pub fn hmatching_indices_indices(a: Indices, b: Indices) -> Boolean {
+    hmatching_indices(a, b)
+}
+
+fn vmatching_indices(a: Indices, b: Indices) -> Boolean {
+    let cols: IntegerSet = a.into_iter().map(|(_, j)| j).collect();
+
+    b.into_iter().any(|(_, j)| cols.contains(&j))
+}
+
+#[primitive("vmatching")]
+pub fn vmatching_object_object(a: Object, b: Object) -> Boolean {
+    vmatching_indices(toindices_object(a), toindices_object(b))
+}
+
+#[primitive("vmatching")]
+pub fn vmatching_object_indices(a: Object, b: Indices) -> Boolean {
+    vmatching_indices(toindices_object(a), b)
+}
+
+#[primitive("vmatching")]
+pub fn vmatching_indices_object(a: Indices, b: Object) -> Boolean {
+    vmatching_indices(a, toindices_object(b))
+}
+
+#[primitive("vmatching")]
+pub fn vmatching_indices_indices(a: Indices, b: Indices) -> Boolean {
+    vmatching_indices(a, b)
+}
+
+fn manhattan_indices(a: Indices, b: Indices) -> Integer {
+    let mut dmin = Integer::MAX;
+
+    for (ai, aj) in a {
+        for (bi, bj) in &b {
+            let d = (ai - *bi).abs() + (aj - *bj).abs();
+            dmin = dmin.min(d);
+        }
+    }
+
+    dmin
+}
+
+#[primitive("manhattan")]
+pub fn manhattan_object_object(a: Object, b: Object) -> Integer {
+    manhattan_indices(toindices_object(a), toindices_object(b))
+}
+
+#[primitive("manhattan")]
+pub fn manhattan_object_indices(a: Object, b: Indices) -> Integer {
+    manhattan_indices(toindices_object(a), b)
+}
+
+#[primitive("manhattan")]
+pub fn manhattan_indices_object(a: Indices, b: Object) -> Integer {
+    manhattan_indices(a, toindices_object(b))
+}
+
+#[primitive("manhattan")]
+pub fn manhattan_indices_indices(a: Indices, b: Indices) -> Integer {
+    manhattan_indices(a, b)
+}
+
+#[primitive("adjacent")]
+pub fn adjacent_object_object(a: Object, b: Object) -> Boolean {
+    manhattan_object_object(a, b) == 1
+}
+
+#[primitive("adjacent")]
+pub fn adjacent_object_indices(a: Object, b: Indices) -> Boolean {
+    manhattan_object_indices(a, b) == 1
+}
+
+#[primitive("adjacent")]
+pub fn adjacent_indices_object(a: Indices, b: Object) -> Boolean {
+    manhattan_indices_object(a, b) == 1
+}
+
+#[primitive("adjacent")]
+pub fn adjacent_indices_indices(a: Indices, b: Indices) -> Boolean {
+    manhattan_indices_indices(a, b) == 1
+}
+
+fn bordering_from_indices(patch: Indices, grid: Grid) -> Boolean {
+    if grid.is_empty() {
+        panic!("bordering received empty grid");
+    }
+
+    let h = grid.len();
+    let w = grid[0].len();
+
+    if w == 0 || grid.iter().any(|row| row.len() != w) {
+        panic!("bordering received wrong grid");
+    }
+
+    let um = uppermost_indices(patch.clone());
+    let lm = leftmost_indices(patch.clone());
+    let lrm = lowermost_indices(patch.clone());
+    let rtm = rightmost_indices(patch);
+
+    um == 0
+        || lm == 0
+        || lrm == h as Integer - 1
+        || rtm == w as Integer - 1
+}
+
+#[primitive("bordering")]
+pub fn bordering_object(patch: Object, grid: Grid) -> Boolean {
+    bordering_from_indices(toindices_object(patch), grid)
+}
+
+#[primitive("bordering")]
+pub fn bordering_indices(patch: Indices, grid: Grid) -> Boolean {
+    bordering_from_indices(patch, grid)
+}
+
+fn centerofmass_from_indices(patch: Indices) -> IntegerTuple {
+    let l = patch.len();
+
+    if l == 0 {
+        panic!("Wrong value");
+    }
+
+    let (sum_i, sum_j) = patch.into_iter().fold(
+        (0, 0),
+        |(sum_i, sum_j), (i, j)| (sum_i + i, sum_j + j),
+    );
+
+    let l = l as Integer;
+
+    (sum_i / l, sum_j / l)
+}
+
+#[primitive("centerofmass")]
+pub fn centerofmass_object(object: Object) -> IntegerTuple {
+    centerofmass_from_indices(toindices_object(object))
+}
+
+#[primitive("centerofmass")]
+pub fn centerofmass_indices(patch: Indices) -> IntegerTuple {
+    centerofmass_from_indices(patch)
+}
+
+#[primitive("palette")]
+pub fn palette_grid(grid: Grid) -> IntegerSet {
+    grid.into_iter()
+        .flatten()
+        .collect()
+}
+
+#[primitive("palette")]
+pub fn palette_object(object: Object) -> IntegerSet {
+    object
+        .into_iter()
+        .map(|(color, _)| color)
+        .collect()
+}
+
+#[primitive("numcolors")]
+pub fn numcolors_grid(grid: Grid) -> Integer {
+    palette_grid(grid).len() as Integer
+}
+
+#[primitive("numcolors")]
+pub fn numcolors_object(object: Object) -> Integer {
+    palette_object(object).len() as Integer
+}
+
 #[primitive("square")]
 pub fn square_grid(grid: Grid) -> Boolean {
     if grid.is_empty() {
