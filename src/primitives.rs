@@ -8,6 +8,160 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+#[primitive("objects")]
+pub fn objects(
+    grid: Grid,
+    univalued: Boolean,
+    diagonal: Boolean,
+    without_bg: Boolean,
+) -> Objects {
+    if grid.is_empty() {
+        panic!("objects received empty grid");
+    }
+
+    let h = grid.len();
+    let w = grid[0].len();
+
+    if w == 0 || grid.iter().any(|row| row.len() != w) {
+        panic!("objects received wrong grid");
+    }
+
+    let bg = if without_bg {
+        mostcolor_grid(grid.clone())
+    } else {
+        -1
+    };
+
+    let mut occupied = Indices::new();
+
+    let mut unvisited = Indices::new();
+    for i in 0..h {
+        for j in 0..w {
+            unvisited.insert((i as Integer, j as Integer));
+        }
+    }
+
+    let mut result = Objects::new();
+
+    for loc in unvisited {
+        if occupied.contains(&loc) {
+            continue;
+        }
+
+        let (i, j) = loc;
+        let val = grid[i as usize][j as usize];
+
+        if without_bg && val == bg {
+            continue;
+        }
+
+        let mut object = Object::new();
+        let mut candidates = Indices::new();
+        candidates.insert(loc);
+
+        while !candidates.is_empty() {
+            let mut neighborhood = Indices::new();
+
+            for cand in candidates.iter() {
+                if occupied.contains(cand) {
+                    continue;
+                }
+
+                let (ci, cj) = *cand;
+                let v = grid[ci as usize][cj as usize];
+
+                if (univalued && v == val)
+                    || (!univalued && (!without_bg || v != bg))
+                {
+                    object.insert((v, *cand));
+                    occupied.insert(*cand);
+
+                    let neigh = if diagonal {
+                        neighbors(*cand)
+                    } else {
+                        dneighbors(*cand)
+                    };
+
+                    for p in neigh {
+                        let (pi, pj) = p;
+
+                        if pi >= 0
+                            && pi < h as Integer
+                            && pj >= 0
+                            && pj < w as Integer
+                        {
+                            neighborhood.insert(p);
+                        }
+                    }
+                }
+            }
+
+            candidates.clear();
+
+            for p in neighborhood {
+                if !occupied.contains(&p) {
+                    candidates.insert(p);
+                }
+            }
+        }
+
+        result.insert(object);
+    }
+
+    result
+}
+
+#[primitive("partition")]
+pub fn partition(grid: Grid) -> Objects {
+    if grid.is_empty() {
+        return Objects::new();
+    }
+
+    let mut objects_by_color: BTreeMap<Integer, Object> = BTreeMap::new();
+
+    for (i, row) in grid.iter().enumerate() {
+        for (j, &color) in row.iter().enumerate() {
+            objects_by_color
+                .entry(color)
+                .or_default()
+                .insert((color, (i as Integer, j as Integer)));
+        }
+    }
+
+    objects_by_color.into_values().collect()
+}
+
+#[primitive("fgpartition")]
+pub fn fgpartition(grid: Grid) -> Objects {
+    if grid.is_empty() {
+        return Objects::new();
+    }
+
+    let mut objects_by_color: BTreeMap<Integer, Object> = BTreeMap::new();
+
+    for (i, row) in grid.iter().enumerate() {
+        for (j, &color) in row.iter().enumerate() {
+            objects_by_color
+                .entry(color)
+                .or_default()
+                .insert((color, (i as Integer, j as Integer)));
+        }
+    }
+
+    let bg = mostcolor_grid(grid);
+
+    objects_by_color
+        .into_iter()
+        .filter_map(|(color, object)| {
+            if color != bg {
+                Some(object)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn totuple_from_integer_tuple(value: IntegerTuple) -> IntegerVector {
     vec![value.0, value.1]
 }
