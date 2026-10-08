@@ -31,6 +31,15 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(initset_callable_entry, initset_callable_apply, "initset"); //initialize container
+define_callable_primitive!(totuple_callable_entry, totuple_callable_apply, "totuple"); //conversion to tuple
+define_callable_primitive!(first_callable_entry, first_callable_apply, "first"); //first item of container
+define_callable_primitive!(last_callable_entry, last_callable_apply, "last"); //last item of container
+define_callable_primitive!(insert_callable_entry, insert_callable_apply, "insert"); //insert item into container
+define_callable_primitive!(remove_callable_entry, remove_callable_apply, "remove"); //remove item from container
+define_callable_primitive!(other_callable_entry, other_callable_apply, "other"); //other value in the container
+define_callable_primitive!(maximum_callable_entry, maximum_callable_apply, "maximum"); //maximum
+define_callable_primitive!(minimum_callable_entry, minimum_callable_apply, "minimum"); //minimum
 define_callable_primitive!(interval_callable_entry, interval_callable_apply, "interval"); //range
 define_callable_primitive!(ofcolor_callable_entry, ofcolor_callable_apply, "ofcolor"); //indices of all grid cells with value
 define_callable_primitive!(vfrontier_callable_entry, vfrontier_callable_apply, "vfrontier"); //vertical frontier
@@ -654,6 +663,21 @@ impl IntoValue for Integer {
     }
 }
 
+impl FromValue for Cell {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::Cell(value) => Ok(*value),
+            _ => Err("expected Cell".to_string()),
+        }
+    }
+}
+
+impl IntoValue for Cell {
+    fn into_value(self) -> Value {
+        Value::Cell(self)
+    }
+}
+
 impl FromValue for Grid {
     fn from_value(value: &Value) -> Result<Self, String> {
         match value {
@@ -834,6 +858,66 @@ impl IntoValue for IntegerSet {
     }
 }
 
+impl FromValue for IndicesSet {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::IndicesSet(value) => Ok(value.clone()),
+            _ => Err("expected IndicesSet".to_string()),
+        }
+    }
+}
+
+impl IntoValue for IndicesSet {
+    fn into_value(self) -> Value {
+        Value::IndicesSet(self)
+    }
+}
+
+impl FromValue for BooleanVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::BooleanVector(value) => Ok(value.clone()),
+            _ => Err("expected BooleanVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for BooleanVector {
+    fn into_value(self) -> Value {
+        Value::BooleanVector(self)
+    }
+}
+
+impl FromValue for ObjectsVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::ObjectsVector(value) => Ok(value.clone()),
+            _ => Err("expected ObjectsVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for ObjectsVector {
+    fn into_value(self) -> Value {
+        Value::ObjectsVector(self)
+    }
+}
+
+impl FromValue for IndicesVector {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::IndicesVector(value) => Ok(value.clone()),
+            _ => Err("expected IndicesVector".to_string()),
+        }
+    }
+}
+
+impl IntoValue for IndicesVector {
+    fn into_value(self) -> Value {
+        Value::IndicesVector(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     pub inputs: Vec<Type>,
@@ -858,7 +942,12 @@ pub enum Type {
     Callable,
     ObjectVector,
     Objects,
+    IndicesSet,
     IntegerSet,
+    BooleanVector,
+    ObjectsVector,
+    IndicesVector,
+    Cell,
 }
 
 #[derive(Debug, Clone)]
@@ -876,6 +965,11 @@ pub enum Value {
     ObjectVector(ObjectVector),
     Objects(Objects),
     IntegerSet(IntegerSet),
+    IndicesSet(IndicesSet),
+    BooleanVector(BooleanVector),
+    ObjectsVector(ObjectsVector),
+    IndicesVector(IndicesVector),
+    Cell(Cell),
 }
 
 #[derive(Debug)]
@@ -945,7 +1039,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 344);
+        assert_eq!(PRIMITIVES.len(), 431);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
