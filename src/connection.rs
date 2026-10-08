@@ -30,11 +30,15 @@ impl TryFrom<ConnectionJson> for Connection {
                 let primitive_entry =
                     crate::registry::PRIMITIVES
                         .iter()
-                        .find(|entry| entry.name == primitive)
+                        .find(|entry| {
+                            entry.name == primitive
+                                && entry.inputs.len() == inputs.len()
+                        })
                         .ok_or_else(|| {
                             format!(
-                                "unknown primitive '{}'",
-                                primitive
+                                "unknown primitive '{}' with {} inputs",
+                                primitive,
+                                inputs.len()
                             )
                         })?;
 
@@ -1315,7 +1319,7 @@ mod tests {
     use crate::registry::Type;
     use crate::search::{generate, semantic_signature, generate_inputs};
     use crate::signature::InputSpec;
-    use crate::registry::{PRIMITIVES, Value};
+    use crate::registry::{PRIMITIVES, Value, find_primitive};
     use crate::function::{Function, FunctionKind};
     use rand::SeedableRng;
 
@@ -1355,8 +1359,8 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(depth_1.len(), 39);
-        assert_eq!(depth_2.len(), 6114);
+        assert_eq!(depth_1.len(), 51);
+        assert_eq!(depth_2.len(), 10645);
     }
 
     #[test]
@@ -1682,10 +1686,11 @@ mod tests {
         let input_i = Connection::input("I", Type::Grid);
         let input_j = Connection::input("J", Type::Grid);
 
-        let vconcat = crate::registry::PRIMITIVES
-            .iter()
-            .find(|p| p.name == "vconcat")
-            .unwrap();
+        let vconcat = find_primitive(
+            "vconcat",
+            &[Type::Grid, Type::Grid],
+            Type::Grid,
+        );
 
         let program = Connection::new(
             vconcat,
@@ -1885,10 +1890,11 @@ mod tests {
 
     #[test]
     fn indices_connection_can_feed_ulcorner() {
-        let primitive = crate::registry::PRIMITIVES
-            .iter()
-            .find(|primitive| primitive.name == "ulcorner")
-            .expect("ulcorner should be registered");
+        let primitive = find_primitive(
+            "ulcorner",
+            &[Type::Indices],
+            Type::IntegerTuple,
+        );
 
         let indices = std::collections::BTreeSet::from([
             (2, 5),
@@ -1932,10 +1938,11 @@ mod tests {
         ];
 
         for (name, expected) in cases {
-            let primitive = crate::registry::PRIMITIVES
-                .iter()
-                .find(|primitive| primitive.name == name)
-                .expect("corner should be registered");
+            let primitive = find_primitive(
+                name,
+                &[Type::Indices],
+                Type::IntegerTuple,
+            );
 
             let connection = Connection::new(
                 primitive,
@@ -1967,10 +1974,11 @@ mod tests {
             vec![6, 7, 8, 9, 0],
         ];
 
-        let crop = PRIMITIVES
-            .iter()
-            .find(|primitive| primitive.name == "crop")
-            .expect("crop should be registered");
+        let crop = find_primitive(
+            "crop",
+            &[Type::Grid, Type::IntegerTuple, Type::IntegerTuple],
+            Type::Grid,
+        );
 
         let connection = Connection::new(
             crop,
