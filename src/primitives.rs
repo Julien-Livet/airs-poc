@@ -3,6 +3,151 @@ use primitive_macro::primitive;
 
 const MAX_SIZE: usize = 30;
 
+#[primitive("hsplit")]
+pub fn hsplit(grid: Grid, n: Integer) -> GridVector {
+    if n <= 0 {
+        panic!("Wrong value");
+    }
+
+    let h = grid.len();
+    if h == 0 {
+        panic!("Wrong value");
+    }
+
+    let w = grid[0].len();
+    let n = n as usize;
+
+    let part_width = w / n;
+    let offset = usize::from(w % n != 0);
+
+    let mut result = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let start_col = part_width * i + i * offset;
+
+        result.push(crop(
+            grid.clone(),
+            (0, start_col as Integer),
+            (h as Integer, part_width as Integer),
+        ));
+    }
+
+    result
+}
+
+#[primitive("vsplit")]
+pub fn vsplit(grid: Grid, n: Integer) -> GridVector {
+    if n <= 0 {
+        panic!("Wrong value");
+    }
+
+    let h = grid.len();
+    if h == 0 {
+        panic!("Wrong value");
+    }
+
+    let w = grid[0].len();
+    let n = n as usize;
+
+    let part_height = h / n;
+    let offset = usize::from(h % n != 0);
+
+    let mut result = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let start_row = part_height * i + i * offset;
+
+        result.push(crop(
+            grid.clone(),
+            (start_row as Integer, 0),
+            (part_height as Integer, w as Integer),
+        ));
+    }
+
+    result
+}
+
+#[primitive("cellwise")]
+pub fn cellwise(a: Grid, b: Grid, fallback: Integer) -> Grid {
+    let h = a.len();
+
+    if h == 0 || b.len() != h {
+        panic!("Wrong value");
+    }
+
+    let w = a[0].len();
+
+    if w == 0 || b.iter().any(|row| row.len() != w) {
+        panic!("Wrong value");
+    }
+
+    let mut result = vec![vec![fallback; w]; h];
+
+    for i in 0..h {
+        for j in 0..w {
+            result[i][j] = if a[i][j] == b[i][j] {
+                a[i][j]
+            } else {
+                fallback
+            };
+        }
+    }
+
+    if result == a {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("replace")]
+pub fn replace(
+    grid: Grid,
+    replacee: Integer,
+    replacer: Integer,
+) -> Grid {
+    let mut result = grid.clone();
+
+    for row in &mut result {
+        for value in row {
+            if *value == replacee {
+                *value = replacer;
+            }
+        }
+    }
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("switch")]
+pub fn switch(
+    grid: Grid,
+    a: Integer,
+    b: Integer,
+) -> Grid {
+    let mut result = grid.clone();
+
+    for row in &mut result {
+        for value in row {
+            if *value == a {
+                *value = b;
+            } else if *value == b {
+                *value = a;
+            }
+        }
+    }
+
+    if result == grid {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
 #[primitive("hupscale")]
 pub fn hupscale(grid: Grid, factor: Integer) -> Grid {
     if factor <= 1 || factor > 10 {
