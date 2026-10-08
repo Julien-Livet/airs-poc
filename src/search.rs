@@ -1,4 +1,4 @@
-use crate::connection::{Connection, Terminals, apply_container_type, ConnectionJson, NamedTerminal};
+use crate::connection::{Connection, Terminals, apply_container_type, ConnectionJson};
 use crate::registry::{Type, Value, PrimitiveEntry, FunctionTypeRegistry, FunctionTypeId};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
@@ -2462,7 +2462,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 11);
+        assert_eq!(programs.len(), 12);
 
         assert!(
             programs.iter().any(|program| {
