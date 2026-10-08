@@ -163,6 +163,7 @@ pub enum TypeJson {
     Callable,
     ObjectVector,
     Objects,
+    IntegerSet,
 }
 
 impl TryFrom<Type> for TypeJson {
@@ -182,6 +183,7 @@ impl TryFrom<Type> for TypeJson {
             Type::Callable => Ok(Self::Callable),
             Type::ObjectVector => Ok(Self::ObjectVector),
             Type::Objects => Ok(Self::Objects),
+            Type::IntegerSet => Ok(Self::IntegerSet),
 
             Type::Function(_) => Err(
                 "Function types require signature serialization"
@@ -208,6 +210,7 @@ impl TryFrom<TypeJson> for Type {
             TypeJson::Callable => Ok(Self::Callable),
             TypeJson::ObjectVector => Ok(Self::ObjectVector),
             TypeJson::Objects => Ok(Self::Objects),
+            TypeJson::IntegerSet => Ok(Self::IntegerSet),
         }
     }
 }
@@ -259,6 +262,7 @@ pub enum ValueJson {
     TupleVector(TupleVector),
     ObjectVector(ObjectVector),
     Objects(Objects),
+    IntegerSet(IntegerSet),
 }
 
 impl TryFrom<Value> for ValueJson {
@@ -287,6 +291,7 @@ impl TryFrom<Value> for ValueJson {
                 Ok(Self::ObjectVector(value))
             }
             Value::Objects(value) => Ok(Self::Objects(value)),
+            Value::IntegerSet(value) => Ok(Self::IntegerSet(value)),
 
             Value::Function(_) => Err(
                 "Function values require function serialization"
@@ -322,6 +327,7 @@ impl TryFrom<ValueJson> for Value {
                 Ok(Self::ObjectVector(value))
             }
             ValueJson::Objects(value) => Ok(Self::Objects(value)),
+            ValueJson::IntegerSet(value) => Ok(Self::IntegerSet(value)),
         }
     }
 }
@@ -981,6 +987,7 @@ impl Connection {
             Value::TupleVector(_) => "TupleVector".to_string(),
             Value::ObjectVector(_) => "ObjectVector".to_string(),
             Value::Objects(_) => "Objects".to_string(),
+            Value::IntegerSet(_) => "IntegerSet".to_string(),
         };
 
         Self::Constant { name, value }
@@ -1267,6 +1274,7 @@ impl Value {
             Value::TupleVector(_) => Type::TupleVector,
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
+            Value::IntegerSet(_) => Type::IntegerSet,
         }
     }
 
@@ -1286,6 +1294,7 @@ impl Value {
             Value::TupleVector(_) => Type::TupleVector,
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
+            Value::IntegerSet(_) => Type::IntegerSet,
         }
     }
 
@@ -1314,6 +1323,7 @@ impl Value {
             Value::TupleVector(_) => Type::TupleVector,
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
+            Value::IntegerSet(_) => Type::IntegerSet,
         }
     }
 }
@@ -1364,8 +1374,8 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(depth_1.len(), 68);
-        assert_eq!(depth_2.len(), 148256);
+        assert_eq!(depth_1.len(), 69);
+        assert_eq!(depth_2.len(), 152610);
     }
 
     #[test]
