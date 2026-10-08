@@ -31,6 +31,14 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(hmatching_callable_entry, hmatching_callable_apply, "hmatching"); //whether there exists a row for which both patches have cells
+define_callable_primitive!(vmatching_callable_entry, vmatching_callable_apply, "vmatching"); //whether there exists a column for which both patches have cells
+define_callable_primitive!(manhattan_callable_entry, manhattan_callable_apply, "manhattan"); //closest manhattan distance between two patches
+define_callable_primitive!(adjacent_callable_entry, adjacent_callable_apply, "adjacent"); //whether two patches are adjacent
+define_callable_primitive!(bordering_callable_entry, bordering_callable_apply, "bordering"); //whether a patch is adjacent to a grid border
+define_callable_primitive!(centerofmass_callable_entry, centerofmass_callable_apply, "centerofmass"); //center of mass
+define_callable_primitive!(palette_callable_entry, palette_callable_apply, "palette"); //colors occurring in object or grid
+define_callable_primitive!(numcolors_callable_entry, numcolors_callable_apply, "numcolors"); //number of colors occurring in object or grid
 define_callable_primitive!(square_callable_entry, square_callable_apply, "square"); //whether the piece forms a square
 define_callable_primitive!(vline_callable_entry, vline_callable_apply, "vline"); //whether the piece forms a vertical line
 define_callable_primitive!(hline_callable_entry, hline_callable_apply, "hline"); //whether the piece forms a horizontal line
@@ -795,6 +803,21 @@ impl IntoValue for Objects {
     }
 }
 
+impl FromValue for IntegerSet {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        match value {
+            Value::IntegerSet(value) => Ok(value.clone()),
+            _ => Err("expected IntegerSet".to_string()),
+        }
+    }
+}
+
+impl IntoValue for IntegerSet {
+    fn into_value(self) -> Value {
+        Value::IntegerSet(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     pub inputs: Vec<Type>,
@@ -819,6 +842,7 @@ pub enum Type {
     Callable,
     ObjectVector,
     Objects,
+    IntegerSet,
 }
 
 #[derive(Debug, Clone)]
@@ -835,6 +859,7 @@ pub enum Value {
     TupleVector(TupleVector),
     ObjectVector(ObjectVector),
     Objects(Objects),
+    IntegerSet(IntegerSet),
 }
 
 #[derive(Debug)]
@@ -904,7 +929,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 270);
+        assert_eq!(PRIMITIVES.len(), 302);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
