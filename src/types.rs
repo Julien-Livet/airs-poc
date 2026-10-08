@@ -12,6 +12,10 @@ pub type IntegerVector = Vec<Integer>;
 pub type GridVector = Vec<Grid>;
 pub type TupleVector = Vec<IntegerTuple>;
 pub type ObjectVector = Vec<Object>;
+pub type BooleanVector = Vec<Boolean>;
+pub type ObjectsVector = Vec<Objects>;
+pub type IndicesVector = Vec<Indices>;
 
 pub type Objects = BTreeSet<Object>;
 pub type IntegerSet = BTreeSet<Integer>;
+pub type IndicesSet = BTreeSet<Indices>;
