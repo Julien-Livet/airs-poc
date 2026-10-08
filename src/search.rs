@@ -2462,7 +2462,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 13);
+        assert_eq!(programs.len(), 15);
 
         assert!(
             programs.iter().any(|program| {
