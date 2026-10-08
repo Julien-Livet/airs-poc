@@ -30,6 +30,18 @@ macro_rules! define_callable_primitive {
     };
 }
 
+define_callable_primitive!(mostcolor_callable_entry, mostcolor_callable_apply, "mostcolor"); //most common color
+define_callable_primitive!(leastcolor_callable_entry, leastcolor_callable_apply, "leastcolor"); //least common color
+define_callable_primitive!(fill_callable_entry, fill_callable_apply, "fill"); //fill value at indices
+define_callable_primitive!(paint_callable_entry, paint_callable_apply, "paint"); //paint object to grid
+define_callable_primitive!(underfill_callable_entry, underfill_callable_apply, "underfill"); //fill value at indices that are background
+define_callable_primitive!(underpaint_callable_entry, underpaint_callable_apply, "underpaint"); //paint object to grid where there is background
+define_callable_primitive!(connect_callable_entry, connect_callable_apply, "connect"); //line between two points
+define_callable_primitive!(cover_callable_entry, cover_callable_apply, "cover"); //remove object from grid
+define_callable_primitive!(corners_callable_entry, corners_callable_apply, "corners"); //indices of corners
+define_callable_primitive!(canvas_callable_entry, canvas_callable_apply, "canvas"); //grid construction
+define_callable_primitive!(index_callable_entry, index_callable_apply, "index"); //color at location
+define_callable_primitive!(position_callable_entry, position_callable_apply, "position"); //relative position between two patches
 define_callable_primitive!(switch_callable_entry, switch_callable_apply, "switch"); //color switching
 define_callable_primitive!(replace_callable_entry, replace_callable_apply, "replace"); //color substitution
 define_callable_primitive!(cellwise_callable_entry, cellwise_callable_apply, "cellwise"); //cellwise match of two grids
@@ -882,7 +894,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 210);
+        assert_eq!(PRIMITIVES.len(), 246);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
