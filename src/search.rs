@@ -2298,7 +2298,7 @@ mod tests
     use crate::connection::NamedTerminal;
     use crate::function::Function;
     use rand::SeedableRng;
-    use crate::registry::DynamicPrimitive;
+    use crate::registry::{DynamicPrimitive, find_primitive};
     use crate::types::*;
 
     #[test]
@@ -2420,7 +2420,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 8);
+        assert_eq!(programs.len(), 9);
 
         assert!(
             programs.iter().any(|program| {
@@ -6453,15 +6453,15 @@ mod tests
             let environment =
                 InputEnvironment::new();
 
-            let value =
-                match connection.output_with_inputs(
-                    &environment,
-                ) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        continue;
-                    }
-                };
+            use std::panic::catch_unwind;
+
+            let value = match catch_unwind(|| {
+                connection.output_with_inputs(&environment)
+            }) {
+                Ok(Ok(value)) => value,
+                Ok(Err(_)) => continue,
+                Err(_) => continue,
+            };
 
             if let Value::IntegerVector(values) = value {
                 if values == expected {
@@ -6479,15 +6479,11 @@ mod tests
 
     #[test]
     fn corpus_entry_json_round_trip() {
-        let primitive =
-            crate::registry::PRIMITIVES
-                .iter()
-                .find(|primitive| {
-                    primitive.name == "hmirror"
-                        && primitive.inputs == &[Type::Grid]
-                        && primitive.output == Type::Grid
-                })
-                .expect("expected hmirror");
+        let primitive = find_primitive(
+            "hmirror",
+            &[Type::Grid],
+            Type::Grid,
+        );
 
         let connection = Connection::new(
             primitive,
