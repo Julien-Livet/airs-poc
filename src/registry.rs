@@ -31,6 +31,9 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(objects_callable_entry, objects_callable_apply, "objects"); //objects occurring on the grid
+define_callable_primitive!(partition_callable_entry, partition_callable_apply, "partition"); //each cell with the same value part of the same object
+define_callable_primitive!(fgpartition_callable_entry, fgpartition_callable_apply, "fgpartition"); //each cell with the same value part of the same object without background
 define_callable_primitive!(initset_callable_entry, initset_callable_apply, "initset"); //initialize container
 define_callable_primitive!(totuple_callable_entry, totuple_callable_apply, "totuple"); //conversion to tuple
 define_callable_primitive!(first_callable_entry, first_callable_apply, "first"); //first item of container
@@ -1039,7 +1042,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 431);
+        assert_eq!(PRIMITIVES.len(), 437);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
