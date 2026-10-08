@@ -1,6 +1,62 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+#[primitive("tophalf")]
+pub fn tophalf(grid: Grid) -> Grid {
+    if grid.is_empty() {
+        panic!("Wrong value");
+    }
+
+    let mid = grid.len() / 2;
+
+    grid[..mid].to_vec()
+}
+
+#[primitive("bottomhalf")]
+pub fn bottomhalf(grid: Grid) -> Grid {
+    if grid.is_empty() {
+        panic!("Wrong value");
+    }
+
+    let mid = grid.len().div_ceil(2);
+
+    grid[mid..].to_vec()
+}
+
+#[primitive("lefthalf")]
+pub fn lefthalf(grid: Grid) -> Grid {
+    let result = rot270(tophalf(rot90(grid.clone())));
+
+    if grid == result {
+        panic!("Wrong value");
+    }
+
+    result
+}
+
+#[primitive("righthalf")]
+pub fn righthalf(grid: Grid) -> Grid {
+    rot270(bottomhalf(rot90(grid)))
+}
+
+#[primitive("trim")]
+pub fn trim(grid: Grid) -> Grid {
+    if grid.len() < 3 {
+        panic!("Wrong value");
+    }
+
+    grid[1..grid.len() - 1]
+        .iter()
+        .map(|row| {
+            if row.len() < 3 {
+                panic!("Wrong value");
+            }
+
+            row[1..row.len() - 1].to_vec()
+        })
+        .collect()
+}
+
 #[primitive("branch")]
 pub fn branch_grid(condition: Boolean, a: Grid, b: Grid) -> Grid {
     if condition {
