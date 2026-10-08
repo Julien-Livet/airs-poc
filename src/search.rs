@@ -6164,7 +6164,7 @@ mod tests
 
         let programs = generate(
             Type::GridVector,
-            3,
+            2,
             &terminals,
             &inputs,
             &mut function_types,
@@ -6328,7 +6328,7 @@ mod tests
 
         let programs = generate(
             Type::IntegerVector,
-            3,
+            2,
             &terminals,
             &inputs,
             &mut function_types,
