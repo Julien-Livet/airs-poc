@@ -7,6 +7,31 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+#[primitive("ofcolor")]
+pub fn ofcolor(grid: Grid, value: Integer) -> Indices {
+    if grid.is_empty() {
+        panic!("ofcolor received empty grid");
+    }
+
+    let width = grid[0].len();
+
+    if width == 0 || grid.iter().any(|row| row.len() != width) {
+        panic!("ofcolor received wrong grid");
+    }
+
+    let mut indices = Indices::new();
+
+    for (i, row) in grid.iter().enumerate() {
+        for (j, &cell) in row.iter().enumerate() {
+            if cell == value {
+                indices.insert((i as Integer, j as Integer));
+            }
+        }
+    }
+
+    indices
+}
+
 #[primitive("vfrontier")]
 pub fn vfrontier(location: IntegerTuple) -> Indices {
     let (_, j) = location;
