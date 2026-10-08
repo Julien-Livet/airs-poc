@@ -12,6 +12,20 @@ pub enum FunctionKind {
         fixed: Value,
         left: bool,
     },
+    Composed {
+        outer: Box<Function>,
+        inner: Box<Function>,
+    },
+    Forked {
+        outer: Box<Function>,
+        a: Box<Function>,
+        b: Box<Function>,
+    },
+    Chained {
+        h: Box<Function>,
+        g: Box<Function>,
+        f: Box<Function>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +70,27 @@ impl Function {
         fixed: Connection,
     ) -> Result<Function, String> {
         match &self.kind {
+            FunctionKind::Chained { .. } => {
+                return Err(
+                    "lbind on chained function is not implemented yet"
+                        .to_string()
+                );
+            }
+
+            FunctionKind::Composed { .. } => {
+                return Err(
+                    "lbind on composed function is not implemented yet"
+                        .to_string()
+                );
+            }
+
+            FunctionKind::Forked { .. } => {
+                return Err(
+                    "lbind on forked function is not implemented yet"
+                        .to_string()
+                );
+            }
+
             FunctionKind::PrimitiveFamily(name) => {
                 let fixed_value =
                     fixed.output_with_inputs(&InputEnvironment::new())?;
@@ -134,6 +169,27 @@ impl Function {
         fixed: Connection,
     ) -> Result<Function, String> {
         match &self.kind {
+            FunctionKind::Chained { .. } => {
+                return Err(
+                    "rbind on chained function is not implemented yet"
+                        .to_string()
+                );
+            }
+
+            FunctionKind::Composed { .. } => {
+                return Err(
+                    "rbind on composed function is not implemented yet"
+                        .to_string()
+                );
+            }
+
+            FunctionKind::Forked { .. } => {
+                return Err(
+                    "rbind on forked function is not implemented yet"
+                        .to_string()
+                );
+            }
+
             FunctionKind::PrimitiveFamily(name) => {
                 let fixed_value =
                     fixed.output_with_inputs(&InputEnvironment::new())?;
@@ -291,6 +347,24 @@ impl Function {
                     name,
                     &all_arguments,
                 )
+            }
+            
+            FunctionKind::Composed { outer, inner } => {
+                let value = inner.apply_values(arguments)?;
+                outer.apply_values(vec![value])
+            }
+
+            FunctionKind::Forked { outer, a, b } => {
+                let a_value = a.apply_values(arguments.clone())?;
+                let b_value = b.apply_values(arguments)?;
+
+                outer.apply_values(vec![a_value, b_value])
+            }
+
+            FunctionKind::Chained { h, g, f } => {
+                let value = f.apply_values(arguments)?;
+                let value = g.apply_values(vec![value])?;
+                h.apply_values(vec![value])
             }
         }
     }
