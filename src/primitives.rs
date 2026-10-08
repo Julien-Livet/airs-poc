@@ -7,6 +7,466 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+#[primitive("vfrontier")]
+pub fn vfrontier(location: IntegerTuple) -> Indices {
+    let (_, j) = location;
+    (0..MAX_SIZE)
+        .map(|i| (i as Integer, j))
+        .collect()
+}
+
+#[primitive("hfrontier")]
+pub fn hfrontier(location: IntegerTuple) -> Indices {
+    let (i, _) = location;
+    (0..MAX_SIZE)
+        .map(|j| (i, j as Integer))
+        .collect()
+}
+
+fn backdrop_from_indices(patch: Indices) -> Indices {
+    if patch.is_empty() {
+        panic!("backdrop received empty patch");
+    }
+
+    let (ui, uj) = ulcorner(patch.clone());
+    let (li, lj) = lrcorner(patch);
+
+    let mut result = Indices::new();
+
+    for i in ui..=li {
+        for j in uj..=lj {
+            result.insert((i, j));
+        }
+    }
+
+    result
+}
+
+#[primitive("backdrop")]
+pub fn backdrop_object(object: Object) -> Indices {
+    backdrop_from_indices(toindices_object(object))
+}
+
+#[primitive("backdrop")]
+pub fn backdrop_indices(indices: Indices) -> Indices {
+    backdrop_from_indices(indices)
+}
+
+fn delta_from_indices(patch: Indices) -> Indices {
+    if patch.is_empty() {
+        panic!("delta received empty patch");
+    }
+
+    let mut result = backdrop_from_indices(patch.clone());
+
+    for index in patch {
+        result.remove(&index);
+    }
+
+    result
+}
+
+#[primitive("delta")]
+pub fn delta_object(object: Object) -> Indices {
+    delta_from_indices(toindices_object(object))
+}
+
+#[primitive("delta")]
+pub fn delta_indices(indices: Indices) -> Indices {
+    delta_from_indices(indices)
+}
+
+fn gravitate_from_indices(
+    source: Indices,
+    destination: Indices,
+) -> IntegerTuple {
+    let (si, sj) = center_indices(source.clone());
+    let (di, dj) = center_indices(destination.clone());
+
+    let (step_i, step_j) = if vmatching_indices_indices(
+        source.clone(),
+        destination.clone(),
+    ) {
+        (if si < di { 1 } else { -1 }, 0)
+    } else {
+        (0, if sj < dj { 1 } else { -1 })
+    };
+
+    let mut current = source;
+    let mut move_i = step_i;
+    let mut move_j = step_j;
+    let mut count = 0;
+
+    while !adjacent_indices_indices(
+        current.clone(),
+        destination.clone(),
+    ) && count < 42
+    {
+        count += 1;
+
+        move_i += step_i;
+        move_j += step_j;
+
+        current = shift_indices(
+            current,
+            (step_i, step_j),
+        );
+    }
+
+    (move_i - step_i, move_j - step_j)
+}
+
+#[primitive("gravitate")]
+pub fn gravitate_object_object(
+    source: Object,
+    destination: Object,
+) -> IntegerTuple {
+    gravitate_from_indices(
+        toindices_object(source),
+        toindices_object(destination),
+    )
+}
+
+#[primitive("gravitate")]
+pub fn gravitate_object_indices(
+    source: Object,
+    destination: Indices,
+) -> IntegerTuple {
+    gravitate_from_indices(
+        toindices_object(source),
+        destination,
+    )
+}
+
+#[primitive("gravitate")]
+pub fn gravitate_indices_object(
+    source: Indices,
+    destination: Object,
+) -> IntegerTuple {
+    gravitate_from_indices(
+        source,
+        toindices_object(destination),
+    )
+}
+
+#[primitive("gravitate")]
+pub fn gravitate_indices_indices(
+    source: Indices,
+    destination: Indices,
+) -> IntegerTuple {
+    gravitate_from_indices(source, destination)
+}
+
+fn rectangle_outline(
+    top: Integer,
+    left: Integer,
+    bottom: Integer,
+    right: Integer,
+) -> Indices {
+    let mut result = Indices::new();
+
+    if top > bottom || left > right {
+        return result;
+    }
+
+    for j in left..=right {
+        result.insert((top, j));
+        result.insert((bottom, j));
+    }
+
+    for i in top..=bottom {
+        result.insert((i, left));
+        result.insert((i, right));
+    }
+
+    result
+}
+
+fn inbox_from_indices(patch: Indices) -> Indices {
+    if patch.is_empty() {
+        panic!("inbox received empty patch");
+    }
+
+    let ai = uppermost_indices(patch.clone()) + 1;
+    let aj = leftmost_indices(patch.clone()) + 1;
+    let bi = lowermost_indices(patch.clone()) - 1;
+    let bj = rightmost_indices(patch);
+
+    rectangle_outline(
+        ai.min(bi),
+        aj.min(bj),
+        ai.max(bi),
+        aj.max(bj),
+    )
+}
+
+#[primitive("inbox")]
+pub fn inbox_object(object: Object) -> Indices {
+    inbox_from_indices(toindices_object(object))
+}
+
+#[primitive("inbox")]
+pub fn inbox_indices(indices: Indices) -> Indices {
+    inbox_from_indices(indices)
+}
+
+fn outbox_from_indices(patch: Indices) -> Indices {
+    if patch.is_empty() {
+        panic!("outbox received empty patch");
+    }
+
+    let ai = uppermost_indices(patch.clone()) + 1;
+    let aj = leftmost_indices(patch.clone()) + 1;
+    let bi = lowermost_indices(patch.clone()) - 1;
+    let bj = rightmost_indices(patch);
+
+    rectangle_outline(
+        ai.min(bi),
+        aj.min(bj),
+        ai.max(bi),
+        aj.max(bj),
+    )
+}
+
+#[primitive("outbox")]
+pub fn outbox_object(object: Object) -> Indices {
+    outbox_from_indices(toindices_object(object))
+}
+
+#[primitive("outbox")]
+pub fn outbox_indices(indices: Indices) -> Indices {
+    outbox_from_indices(indices)
+}
+
+fn box_from_indices(patch: Indices) -> Indices {
+    if patch.is_empty() {
+        panic!("box received empty patch");
+    }
+
+    let (ai, aj) = ulcorner(patch.clone());
+    let (bi, bj) = lrcorner(patch);
+
+    rectangle_outline(
+        ai.min(bi),
+        aj.min(bj),
+        ai.max(bi),
+        aj.max(bj),
+    )
+}
+
+#[primitive("box")]
+pub fn box_object(object: Object) -> Indices {
+    box_from_indices(toindices_object(object))
+}
+
+#[primitive("box")]
+pub fn box_indices(indices: Indices) -> Indices {
+    box_from_indices(indices)
+}
+
+#[primitive("shoot")]
+pub fn shoot(
+    start: IntegerTuple,
+    direction: IntegerTuple,
+) -> Indices {
+    let (si, sj) = start;
+    let (di, dj) = direction;
+
+    if si.abs() > 100 || sj.abs() > 100 {
+        panic!("shoot received wrong start");
+    }
+
+    if di * di + dj * dj > (2 * MAX_SIZE * MAX_SIZE).try_into().unwrap() {
+        panic!("shoot received wrong direction");
+    }
+
+    let distance = SHOOT_DISTANCE as Integer;
+
+    connect(
+        start,
+        (
+            si + distance * di,
+            sj + distance * dj,
+        ),
+    )
+}
+
+#[primitive("occurrences")]
+pub fn occurrences(grid: Grid, object: Object) -> Indices {
+    if grid.is_empty() || object.is_empty() {
+        panic!("occurrences received empty grid or object");
+    }
+
+    let normalized = normalize_object(object.clone());
+
+    let h = grid.len();
+    let w = grid[0].len();
+
+    if w == 0 || grid.iter().any(|row| row.len() != w) {
+        panic!("occurrences received wrong grid");
+    }
+
+    let (oh, ow) = shape_object(object);
+
+    let oh = oh as usize;
+    let ow = ow as usize;
+
+    if oh > h || ow > w {
+        return Indices::new();
+    }
+
+    let mut result = Indices::new();
+
+    for i in 0..=h - oh {
+        for j in 0..=w - ow {
+            let mut matches = true;
+
+            for &(value, (oi, oj)) in &normalized {
+                let a = (oi + i as Integer) as usize;
+                let b = (oj + j as Integer) as usize;
+
+                if grid[a][b] != value {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if matches {
+                result.insert((i as Integer, j as Integer));
+            }
+        }
+    }
+
+    result
+}
+
+#[primitive("frontiers")]
+pub fn frontiers(grid: Grid) -> Objects {
+    if grid.is_empty() {
+        panic!("frontiers received empty grid");
+    }
+
+    let h = grid.len();
+    let w = grid[0].len();
+
+    if w == 0 || grid.iter().any(|row| row.len() != w) {
+        panic!("frontiers received wrong grid");
+    }
+
+    let mut result = Objects::new();
+
+    // Uniform rows.
+    for i in 0..h {
+        let color = grid[i][0];
+
+        if grid[i].iter().all(|&value| value == color) {
+            let mut object = Object::new();
+
+            for j in 0..w {
+                object.insert((
+                    grid[i][j],
+                    (i as Integer, j as Integer),
+                ));
+            }
+
+            result.insert(object);
+        }
+    }
+
+    // Uniform columns.
+    for j in 0..w {
+        let color = grid[0][j];
+
+        if (0..h).all(|i| grid[i][j] == color) {
+            let mut object = Object::new();
+
+            for i in 0..h {
+                object.insert((
+                    grid[i][j],
+                    (i as Integer, j as Integer),
+                ));
+            }
+
+            result.insert(object);
+        }
+    }
+
+    result
+}
+
+#[primitive("compress")]
+pub fn compress(grid: Grid) -> Grid {
+    if grid.is_empty() {
+        panic!("compress received empty grid");
+    }
+
+    let h = grid.len();
+    let w = grid[0].len();
+
+    if w == 0 || grid.iter().any(|row| row.len() != w) {
+        panic!("compress received wrong grid");
+    }
+
+    let remove_rows: Vec<bool> = (0..h)
+        .map(|i| {
+            let color = grid[i][0];
+            grid[i].iter().all(|&value| value == color)
+        })
+        .collect();
+
+    let remove_cols: Vec<bool> = (0..w)
+        .map(|j| {
+            let color = grid[0][j];
+            (0..h).all(|i| grid[i][j] == color)
+        })
+        .collect();
+
+    let result: Grid = (0..h)
+        .filter(|&i| !remove_rows[i])
+        .map(|i| {
+            (0..w)
+                .filter(|&j| !remove_cols[j])
+                .map(|j| grid[i][j])
+                .collect()
+        })
+        .collect();
+
+    if result == grid {
+        panic!("compress produced identity");
+    }
+
+    result
+}
+
+#[primitive("move")]
+pub fn move_object(
+    grid: Grid,
+    object: Object,
+    offset: IntegerTuple,
+) -> Grid {
+    let covered = cover_object(grid, object.clone());
+    let shifted = shift_object(object, offset);
+
+    paint(covered, shifted)
+}
+
+#[primitive("subgrid")]
+pub fn subgrid_object(patch: Object, grid: Grid) -> Grid {
+    subgrid_from_indices(toindices_object(patch), grid)
+}
+
+#[primitive("subgrid")]
+pub fn subgrid_indices(patch: Indices, grid: Grid) -> Grid {
+    subgrid_from_indices(patch, grid)
+}
+
+fn subgrid_from_indices(patch: Indices, grid: Grid) -> Grid {
+    let loc = ulcorner(patch.clone());
+    let dimensions = shape_indices(patch);
+
+    crop(grid, loc, dimensions)
+}
+
 fn hmatching_indices(a: Indices, b: Indices) -> Boolean {
     let rows: IntegerSet = a.into_iter().map(|(i, _)| i).collect();
 
@@ -149,7 +609,7 @@ fn centerofmass_from_indices(patch: Indices) -> IntegerTuple {
     let l = patch.len();
 
     if l == 0 {
-        panic!("Wrong value");
+        panic!("centerofmass received empty patch");
     }
 
     let (sum_i, sum_j) = patch.into_iter().fold(
