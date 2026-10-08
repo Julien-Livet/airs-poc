@@ -31,6 +31,20 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(vfrontier_callable_entry, vfrontier_callable_apply, "vfrontier"); //vertical frontier
+define_callable_primitive!(hfrontier_callable_entry, hfrontier_callable_apply, "hfrontier"); //horizontal frontier
+define_callable_primitive!(backdrop_callable_entry, backdrop_callable_apply, "backdrop"); //indices in bounding box of patch
+define_callable_primitive!(delta_callable_entry, delta_callable_apply, "delta"); //indices in bounding box but not part of patch
+define_callable_primitive!(gravitate_callable_entry, gravitate_callable_apply, "gravitate"); //direction to move source until adjacent to destination
+define_callable_primitive!(inbox_callable_entry, inbox_callable_apply, "inbox"); //inbox for patch
+define_callable_primitive!(outbox_callable_entry, outbox_callable_apply, "outbox"); //outbox for patch
+define_callable_primitive!(box_callable_entry, box_callable_apply, "box"); //outline of patch
+define_callable_primitive!(shoot_callable_entry, shoot_callable_apply, "shoot"); //line from starting point and direction
+define_callable_primitive!(occurrences_callable_entry, occurrences_callable_apply, "occurrences"); //locations of occurrences of object in grid
+define_callable_primitive!(frontiers_callable_entry, frontiers_callable_apply, "frontiers"); //set of frontiers
+define_callable_primitive!(compress_callable_entry, compress_callable_apply, "compress"); //removes frontiers from grid
+define_callable_primitive!(subgrid_callable_entry, subgrid_callable_apply, "subgrid"); //smallest subgrid containing object
+define_callable_primitive!(move_callable_entry, move_callable_apply, "move"); //move object on grid
 define_callable_primitive!(hmatching_callable_entry, hmatching_callable_apply, "hmatching"); //whether there exists a row for which both patches have cells
 define_callable_primitive!(vmatching_callable_entry, vmatching_callable_apply, "vmatching"); //whether there exists a column for which both patches have cells
 define_callable_primitive!(manhattan_callable_entry, manhattan_callable_apply, "manhattan"); //closest manhattan distance between two patches
@@ -929,7 +943,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 302);
+        assert_eq!(PRIMITIVES.len(), 339);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
