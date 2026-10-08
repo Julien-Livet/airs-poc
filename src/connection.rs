@@ -1359,8 +1359,8 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(depth_1.len(), 51);
-        assert_eq!(depth_2.len(), 10645);
+        assert_eq!(depth_1.len(), 63);
+        assert_eq!(depth_2.len(), 119620);
     }
 
     #[test]
