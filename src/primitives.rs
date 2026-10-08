@@ -2512,6 +2512,13 @@ pub fn size_objects(
 }
 
 #[primitive("size")]
+pub fn size_integer_set(
+    value: IntegerSet,
+) -> Integer {
+    value.len() as Integer
+}
+
+#[primitive("size")]
 pub fn size_integer_vector(
     value: IntegerVector,
 ) -> Integer {
