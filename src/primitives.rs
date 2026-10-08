@@ -1,11 +1,529 @@
 use crate::types::*;
 use primitive_macro::primitive;
+use std::collections::BTreeSet;
 
 const SHOOT_DISTANCE: usize = 42;
 const MAX_SIZE: usize = 30;
 use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
+
+fn totuple_from_integer_tuple(value: IntegerTuple) -> IntegerVector {
+    vec![value.0, value.1]
+}
+
+fn totuple_from_set<T>(value: BTreeSet<T>) -> Vec<T> {
+    value.into_iter().collect()
+}
+
+#[primitive("totuple")]
+pub fn totuple_integer_tuple(value: IntegerTuple) -> IntegerVector {
+    totuple_from_integer_tuple(value)
+}
+
+#[primitive("totuple")]
+pub fn totuple_integer_set(value: IntegerSet) -> IntegerVector {
+    totuple_from_set(value)
+}
+
+#[primitive("totuple")]
+pub fn totuple_objects(value: Objects) -> ObjectVector {
+    value.into_iter().collect()
+}
+
+#[primitive("totuple")]
+pub fn totuple_indices(value: Indices) -> TupleVector {
+    value.into_iter().collect()
+}
+
+#[primitive("totuple")]
+pub fn totuple_indices_set(value: IndicesSet) -> IndicesVector {
+    value.into_iter().collect()
+}
+
+#[primitive("totuple")]
+pub fn totuple_integer_vector(value: IntegerVector) -> IntegerVector {
+    value
+}
+
+#[primitive("totuple")]
+pub fn totuple_grid_vector(value: GridVector) -> GridVector {
+    value
+}
+
+#[primitive("initset")]
+pub fn initset_integer(value: Integer) -> IntegerSet {
+    std::iter::once(value).collect()
+}
+
+#[primitive("initset")]
+pub fn initset_cell(value: Cell) -> Object {
+    std::iter::once(value).collect()
+}
+
+#[primitive("initset")]
+pub fn initset_object(value: Object) -> Objects {
+    std::iter::once(value).collect()
+}
+
+#[primitive("initset")]
+pub fn initset_tuple(value: IntegerTuple) -> Indices {
+    std::iter::once(value).collect()
+}
+
+#[primitive("initset")]
+pub fn initset_indices(value: Indices) -> IndicesSet {
+    std::iter::once(value).collect()
+}
+
+#[primitive("initset")]
+pub fn initset_integer_vector(value: Integer) -> IntegerVector {
+    vec![value]
+}
+
+#[primitive("initset")]
+pub fn initset_grid(value: Grid) -> GridVector {
+    vec![value]
+}
+
+#[primitive("initset")]
+pub fn initset_boolean(value: Boolean) -> BooleanVector {
+    vec![value]
+}
+
+#[primitive("maximum")]
+pub fn maximum_integer_set(value: IntegerSet) -> Integer {
+    value.into_iter()
+        .max()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("maximum")]
+pub fn maximum_integer_vector(value: IntegerVector) -> Integer {
+    value.into_iter()
+        .max()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("maximum")]
+pub fn maximum_integer_tuple(value: IntegerTuple) -> Integer {
+    value.0.max(value.1)
+}
+
+#[primitive("minimum")]
+pub fn minimum_integer_set(value: IntegerSet) -> Integer {
+    value.into_iter()
+        .min()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("minimum")]
+pub fn minimum_integer_vector(value: IntegerVector) -> Integer {
+    value.into_iter()
+        .min()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("minimum")]
+pub fn minimum_integer_tuple(value: IntegerTuple) -> Integer {
+    value.0.min(value.1)
+}
+
+fn first_btree_set<T>(value: BTreeSet<T>) -> T {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_integer_tuple(value: IntegerTuple) -> Integer {
+    value.0
+}
+
+#[primitive("first")]
+pub fn first_cell(value: Cell) -> Integer {
+    value.0
+}
+
+#[primitive("first")]
+pub fn first_integer_set(value: IntegerSet) -> Integer {
+    first_btree_set(value)
+}
+
+#[primitive("first")]
+pub fn first_integer_vector(value: IntegerVector) -> Integer {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_object(value: Object) -> Cell {
+    first_btree_set(value)
+}
+
+#[primitive("first")]
+pub fn first_objects(value: Objects) -> Object {
+    first_btree_set(value)
+}
+
+#[primitive("first")]
+pub fn first_object_vector(value: ObjectVector) -> Object {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_objects_vector(value: ObjectsVector) -> Objects {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_indices(value: Indices) -> IntegerTuple {
+    first_btree_set(value)
+}
+
+#[primitive("first")]
+pub fn first_tuple_vector(value: TupleVector) -> IntegerTuple {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_indices_set(value: IndicesSet) -> Indices {
+    first_btree_set(value)
+}
+
+#[primitive("first")]
+pub fn first_indices_vector(value: IndicesVector) -> Indices {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_grid_vector(value: GridVector) -> Grid {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("first")]
+pub fn first_grid(value: Grid) -> IntegerVector {
+    value.into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+fn last_btree_set<T>(value: BTreeSet<T>) -> T {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_integer_tuple(value: IntegerTuple) -> Integer {
+    value.1
+}
+
+#[primitive("last")]
+pub fn last_cell(value: Cell) -> IntegerTuple {
+    value.1
+}
+
+#[primitive("last")]
+pub fn last_integer_set(value: IntegerSet) -> Integer {
+    last_btree_set(value)
+}
+
+#[primitive("last")]
+pub fn last_integer_vector(value: IntegerVector) -> Integer {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_object(value: Object) -> Cell {
+    last_btree_set(value)
+}
+
+#[primitive("last")]
+pub fn last_objects(value: Objects) -> Object {
+    last_btree_set(value)
+}
+
+#[primitive("last")]
+pub fn last_object_vector(value: ObjectVector) -> Object {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_objects_vector(value: ObjectsVector) -> Objects {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_indices(value: Indices) -> IntegerTuple {
+    last_btree_set(value)
+}
+
+#[primitive("last")]
+pub fn last_tuple_vector(value: TupleVector) -> IntegerTuple {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_indices_set(value: IndicesSet) -> Indices {
+    last_btree_set(value)
+}
+
+#[primitive("last")]
+pub fn last_indices_vector(value: IndicesVector) -> Indices {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_grid_vector(value: GridVector) -> Grid {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("last")]
+pub fn last_grid(value: Grid) -> IntegerVector {
+    value.into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+fn insert_set<T: Ord>(value: T, mut container: BTreeSet<T>) -> BTreeSet<T> {
+    container.insert(value);
+    container
+}
+
+fn insert_vec<T>(value: T, mut container: Vec<T>) -> Vec<T> {
+    container.push(value);
+    container
+}
+
+#[primitive("insert")]
+pub fn insert_integer_set(value: Integer, container: IntegerSet) -> IntegerSet {
+    insert_set(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_integer_vector(value: Integer, container: IntegerVector) -> IntegerVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_cell_object(value: Cell, container: Object) -> Object {
+    insert_set(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_object_objects(value: Object, container: Objects) -> Objects {
+    insert_set(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_object_vector(value: Object, container: ObjectVector) -> ObjectVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_objects_objects_vector(value: Objects, container: ObjectsVector) -> ObjectsVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_tuple_indices(value: IntegerTuple, container: Indices) -> Indices {
+    insert_set(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_tuple_vector(
+    value: IntegerTuple,
+    container: TupleVector,
+) -> TupleVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_indices_set(value: Indices, container: IndicesSet) -> IndicesSet {
+    insert_set(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_indices_vector(
+    value: Indices,
+    container: IndicesVector,
+) -> IndicesVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_grid(value: Grid, container: GridVector) -> GridVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_boolean_vector(
+    value: Boolean,
+    container: BooleanVector,
+) -> BooleanVector {
+    insert_vec(value, container)
+}
+
+#[primitive("insert")]
+pub fn insert_grid_vector(value: Grid, container: GridVector) -> GridVector {
+    insert_vec(value, container)
+}
+
+fn remove_set<T: Ord>(value: &T, mut container: BTreeSet<T>) -> BTreeSet<T> {
+    if !container.remove(value) {
+        panic!("Wrong value");
+    }
+
+    container
+}
+
+fn remove_vec<T: PartialEq>(value: &T, mut container: Vec<T>) -> Vec<T> {
+    let index = container
+        .iter()
+        .position(|x| x == value)
+        .unwrap_or_else(|| panic!("Wrong value"));
+
+    container.remove(index);
+    container
+}
+
+#[primitive("remove")]
+pub fn remove_integer_set(value: Integer, container: IntegerSet) -> IntegerSet {
+    remove_set(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_integer_vector(value: Integer, container: IntegerVector) -> IntegerVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_cell_object(value: Cell, container: Object) -> Object {
+    remove_set(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_object_objects(value: Object, container: Objects) -> Objects {
+    remove_set(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_object_vector(value: Object, container: ObjectVector) -> ObjectVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_tuple_indices(value: IntegerTuple, container: Indices) -> Indices {
+    remove_set(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_tuple_vector(
+    value: IntegerTuple,
+    container: TupleVector,
+) -> TupleVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_indices_set(value: Indices, container: IndicesSet) -> IndicesSet {
+    remove_set(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_indices_vector(
+    value: Indices,
+    container: IndicesVector,
+) -> IndicesVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_grid_vector(value: Grid, container: GridVector) -> GridVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_grid(value: Grid, container: GridVector) -> GridVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("remove")]
+pub fn remove_boolean_vector(
+    value: Boolean,
+    container: BooleanVector,
+) -> BooleanVector {
+    remove_vec(&value, container)
+}
+
+#[primitive("other")]
+pub fn other_integer_set(
+    container: IntegerSet,
+    value: Integer,
+) -> Integer {
+    let container = remove_set(&value, container);
+    first_btree_set(container)
+}
+
+#[primitive("other")]
+pub fn other_integer_vector(
+    container: IntegerVector,
+    value: Integer,
+) -> Integer {
+    let container = remove_vec(&value, container);
+    container
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("other")]
+pub fn other_grid_vector(
+    container: GridVector,
+    value: Grid,
+) -> Grid {
+    let container = remove_vec(&value, container);
+    container
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
+
+#[primitive("other")]
+pub fn other_boolean_vector(
+    container: BooleanVector,
+    value: Boolean,
+) -> Boolean {
+    let container = remove_vec(&value, container);
+    container
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("Wrong value"))
+}
 
 #[primitive("interval")]
 pub fn interval(
