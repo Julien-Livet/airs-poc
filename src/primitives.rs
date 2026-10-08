@@ -7,6 +7,42 @@ use std::collections::BTreeMap;
 
 pub type IntegerCountMap = BTreeMap<Integer, Integer>;
 
+#[primitive("interval")]
+pub fn interval(
+    start: Integer,
+    stop: Integer,
+    step: Integer,
+) -> IntegerVector {
+    if (step >= 0 && stop < start) || (step <= 0 && stop > start) {
+        panic!("interval received wrong step, start or stop");
+    }
+
+    if (start - stop).abs() > 100 {
+        panic!("interval received wrong start and stop");
+    }
+
+    if step == 0 {
+        panic!("interval received wrong step");
+    }
+
+    let mut result = IntegerVector::new();
+    let mut current = start;
+
+    if step > 0 {
+        while current < stop {
+            result.push(current);
+            current += step;
+        }
+    } else {
+        while current > stop {
+            result.push(current);
+            current += step;
+        }
+    }
+
+    result
+}
+
 #[primitive("ofcolor")]
 pub fn ofcolor(grid: Grid, value: Integer) -> Indices {
     if grid.is_empty() {
