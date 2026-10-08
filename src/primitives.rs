@@ -251,7 +251,7 @@ fn most_common_color(counts: IntegerCountMap) -> Integer {
                 .then_with(|| color_b.cmp(color_a))
         })
         .map(|(color, _)| color)
-        .expect("Wrong value")
+        .expect("mostcommon received wrong value")
 }
 
 fn least_common_color(counts: IntegerCountMap) -> Integer {
@@ -263,7 +263,7 @@ fn least_common_color(counts: IntegerCountMap) -> Integer {
                 .then_with(|| color_a.cmp(color_b))
         })
         .map(|(color, _)| color)
-        .expect("Wrong value")
+        .expect("leastcommon received wrong value")
 }
 
 #[primitive("mostcolor")]
