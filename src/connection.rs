@@ -1360,7 +1360,7 @@ mod tests {
         );
 
         assert_eq!(depth_1.len(), 63);
-        assert_eq!(depth_2.len(), 119620);
+        assert_eq!(depth_2.len(), 119635);
     }
 
     #[test]
@@ -1799,7 +1799,7 @@ mod tests {
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 24);
+        assert_eq!(programs.len(), 34);
 
         let expressions = programs
             .iter()
