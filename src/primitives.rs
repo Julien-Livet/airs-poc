@@ -1,6 +1,139 @@
 use crate::types::*;
 use primitive_macro::primitive;
 
+#[primitive("halve")]
+pub fn halve(a: Integer) -> Integer {
+    a / 2
+}
+
+#[primitive("halve")]
+pub fn halve_tuple(a: IntegerTuple) -> IntegerTuple {
+    (a.0 / 2, a.1 / 2)
+}
+
+#[primitive("double")]
+pub fn double(a: Integer) -> Integer {
+    a * 2
+}
+
+#[primitive("double")]
+pub fn double_tuple(a: IntegerTuple) -> IntegerTuple {
+    (a.0 * 2, a.1 * 2)
+}
+
+#[primitive("even")]
+pub fn even(a: Integer) -> Boolean {
+    a % 2 == 0
+}
+
+#[primitive("invert")]
+pub fn invert(a: Integer) -> Integer {
+    -a
+}
+
+#[primitive("invert")]
+pub fn invert_tuple(
+    a: IntegerTuple,
+) -> IntegerTuple {
+    (-a.0, -a.0,)
+}
+
+#[primitive("toivec")]
+pub fn toivec(
+    i: Integer,
+) -> IntegerTuple {
+    (i, 0)
+}
+
+#[primitive("tojvec")]
+pub fn tojvec(
+    j: Integer,
+) -> IntegerTuple {
+    (0, j)
+}
+
+#[primitive("portrait")]
+pub fn portrait_grid(
+    grid: Grid,
+) -> Boolean {
+    width_grid(grid.clone()) < height_grid(grid)
+}
+
+#[primitive("portrait")]
+pub fn portrait_object(
+    object: Object,
+) -> Boolean {
+    width_object(object.clone()) < height_object(object)
+}
+
+#[primitive("portrait")]
+pub fn portrait_indices(
+    indices: Indices,
+) -> Boolean {
+    width_indices(indices.clone()) < height_indices(indices)
+}
+
+#[primitive("shape")]
+pub fn shape_grid(
+    grid: Grid,
+) -> IntegerTuple {
+    (width_grid(grid.clone()), height_grid(grid))
+}
+
+#[primitive("shape")]
+pub fn shape_object(
+    object: Object,
+) -> IntegerTuple {
+    (width_object(object.clone()), height_object(object))
+}
+
+#[primitive("shape")]
+pub fn shape_indices(
+    indices: Indices,
+) -> IntegerTuple {
+    (width_indices(indices.clone()), height_indices(indices))
+}
+
+#[primitive("both")]
+fn both(a: Boolean, b: Boolean) -> Boolean {
+    a && b
+}
+
+#[primitive("either")]
+fn either(a: Boolean, b: Boolean) -> Boolean {
+    a || b
+}
+
+#[primitive("identity")]
+fn identity_integer_vector(value: IntegerVector) -> IntegerVector {
+    value
+}
+
+#[primitive("identity")]
+fn identity_objects(value: Objects) -> Objects {
+    value
+}
+
+#[primitive("identity")]
+fn identity_indices(value: Indices) -> Indices {
+    value
+}
+
+#[primitive("identity")]
+fn identity_tuple(value: IntegerTuple) -> IntegerTuple {
+    value
+}
+
+#[primitive("identity")]
+fn identity_object(value: Object) -> Object {
+    value
+}
+
+#[primitive("identity")]
+fn identity_integer(value: Integer) -> Integer {
+    value
+}
+
 #[primitive("identity")]
 fn identity_grid(value: Grid) -> Grid {
     value
@@ -538,7 +671,7 @@ pub fn equality_integer(a: Integer, b: Integer) -> Boolean {
 }
 
 #[primitive("equality")]
-pub fn equality_integer_tuple(
+pub fn equality_tuple(
     a: IntegerTuple,
     b: IntegerTuple,
 ) -> Boolean {
