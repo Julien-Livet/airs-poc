@@ -30,6 +30,16 @@ macro_rules! define_callable_primitive {
     };
 }
 
+//define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(square_callable_entry, square_callable_apply, "square"); //whether the piece forms a square
+define_callable_primitive!(vline_callable_entry, vline_callable_apply, "vline"); //whether the piece forms a vertical line
+define_callable_primitive!(hline_callable_entry, hline_callable_apply, "hline"); //whether the piece forms a horizontal line
+define_callable_primitive!(dneighbors_callable_entry, dneighbors_callable_apply, "dneighbors"); //directly adjacent indices
+define_callable_primitive!(ineighbors_callable_entry, ineighbors_callable_apply, "ineighbors"); //diagonally adjacent indices
+define_callable_primitive!(neighbors_callable_entry, neighbors_callable_apply, "neighbors"); //adjacent indices
+define_callable_primitive!(recolor_callable_entry, recolor_callable_apply, "recolor"); //recolor patch
+define_callable_primitive!(toobject_callable_entry, toobject_callable_apply, "toobject"); //object from patch and grid
+define_callable_primitive!(asobject_callable_entry, asobject_callable_apply, "asobject"); //conversion of grid to object
 define_callable_primitive!(mostcolor_callable_entry, mostcolor_callable_apply, "mostcolor"); //most common color
 define_callable_primitive!(leastcolor_callable_entry, leastcolor_callable_apply, "leastcolor"); //least common color
 define_callable_primitive!(fill_callable_entry, fill_callable_apply, "fill"); //fill value at indices
@@ -894,7 +904,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 246);
+        assert_eq!(PRIMITIVES.len(), 270);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
