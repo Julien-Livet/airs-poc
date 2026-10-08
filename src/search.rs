@@ -1,4 +1,4 @@
-use crate::connection::{Connection, Terminals, apply_container_type, ConnectionJson};
+use crate::connection::{Connection, Terminals, apply_container_type, ConnectionJson, NamedTerminal};
 use crate::registry::{Type, Value, PrimitiveEntry, FunctionTypeRegistry, FunctionTypeId};
 use crate::types::Grid;
 use crate::environment::InputEnvironment;
@@ -1244,21 +1244,22 @@ pub fn build_connection(
                 if let Some(primitive) =
                     crate::registry::primitives_by_name(name)
                         .into_iter()
-                        .find(|primitive| {
-                            primitive.output == Type::Callable
-                        })
+                        .find(|primitive| primitive.output == Type::Callable)
                 {
-                    return Ok(
-                        Connection::callable_primitive(primitive)
-                    );
+                    return Ok(Connection::callable_primitive(primitive));
                 }
             }
         }
 
-        return choose_input(output_type, inputs, rng)
+        let candidates =
+            leaf_candidates(output_type, terminals, inputs);
+
+        return candidates
+            .choose(rng)
+            .cloned()
             .ok_or_else(|| {
                 format!(
-                    "no input available for type {:?}",
+                    "no leaf available for type {:?}",
                     output_type
                 )
             });
@@ -1341,6 +1342,47 @@ pub fn build_connection(
         output_type,
         depth
     ))
+}
+
+fn input_candidates(
+    output_type: Type,
+    inputs: &[InputSpec],
+) -> Vec<Connection> {
+    inputs
+        .iter()
+        .filter(|input| input.accepts(output_type))
+        .map(InputSpec::connection)
+        .collect()
+}
+
+fn terminal_candidates(
+    output_type: Type,
+    terminals: &Terminals,
+) -> Vec<Connection> {
+    terminals
+        .values
+        .iter()
+        .filter(|terminal| terminal.value.ty() == output_type)
+        .map(|terminal| Connection::Constant {
+            name: terminal.name.to_string(),
+            value: terminal.value.clone(),
+        })
+        .collect()
+}
+
+fn leaf_candidates(
+    output_type: Type,
+    terminals: &Terminals,
+    inputs: &[InputSpec],
+) -> Vec<Connection> {
+    let mut candidates =
+        input_candidates(output_type, inputs);
+
+    candidates.extend(
+        terminal_candidates(output_type, terminals)
+    );
+
+    candidates
 }
 
 fn choose_input(
@@ -2420,7 +2462,7 @@ mod tests
             &mut function_types,
         );
 
-        assert_eq!(programs.len(), 9);
+        assert_eq!(programs.len(), 11);
 
         assert!(
             programs.iter().any(|program| {
@@ -5832,11 +5874,47 @@ mod tests
     }
 
     #[test]
+    fn build_connection_can_produce_callable_primitive() {
+        use rand::SeedableRng;
+
+        let inputs = Vec::new();
+        let terminals = Terminals::arc_agi();
+
+        for seed in 0..100 {
+            let mut rng =
+                rand::rngs::StdRng::seed_from_u64(seed);
+
+            let mut function_types =
+                FunctionTypeRegistry::new();
+
+            if let Ok(connection) = build_connection(
+                Type::Callable,
+                0,
+                &terminals,
+                &inputs,
+                &mut function_types,
+                &mut rng,
+            ) {
+                assert!(matches!(
+                    connection,
+                    Connection::CallablePrimitive { .. }
+                ));
+
+                return;
+            }
+        }
+
+        panic!(
+            "could not build a CallablePrimitive \
+            with any tested seed"
+        );
+    }
+
+    #[test]
     fn build_connection_can_produce_callable() {
         use rand::SeedableRng;
 
         let inputs = Vec::new();
-
         let terminals = Terminals::arc_agi();
 
         for seed in 0..100 {
@@ -5854,10 +5932,10 @@ mod tests
                 &mut function_types,
                 &mut rng,
             ) {
-                assert!(matches!(
-                    connection,
-                    Connection::CallablePrimitive { .. }
-                ));
+                assert_eq!(
+                    connection.output_type(),
+                    Type::Callable
+                );
 
                 return;
             }
