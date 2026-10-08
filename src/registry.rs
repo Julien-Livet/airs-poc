@@ -31,6 +31,7 @@ macro_rules! define_callable_primitive {
 }
 
 //define_callable_primitive!(_callable_entry, _callable_apply, ""); //
+define_callable_primitive!(interval_callable_entry, interval_callable_apply, "interval"); //range
 define_callable_primitive!(ofcolor_callable_entry, ofcolor_callable_apply, "ofcolor"); //indices of all grid cells with value
 define_callable_primitive!(vfrontier_callable_entry, vfrontier_callable_apply, "vfrontier"); //vertical frontier
 define_callable_primitive!(hfrontier_callable_entry, hfrontier_callable_apply, "hfrontier"); //horizontal frontier
@@ -944,7 +945,7 @@ mod tests
 
     #[test]
     fn registry_contains_expected_primitives() {
-        assert_eq!(PRIMITIVES.len(), 341);
+        assert_eq!(PRIMITIVES.len(), 343);
 
         assert!(
             PRIMITIVES.iter().any(|primitive| {
