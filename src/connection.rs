@@ -153,6 +153,7 @@ pub enum ConnectionJson {
 pub enum TypeJson {
     Boolean,
     Integer,
+    Cell,
     Grid,
     IntegerTuple,
     Indices,
@@ -164,6 +165,10 @@ pub enum TypeJson {
     ObjectVector,
     Objects,
     IntegerSet,
+    IndicesSet,
+    BooleanVector,
+    ObjectsVector,
+    IndicesVector,
 }
 
 impl TryFrom<Type> for TypeJson {
@@ -173,6 +178,7 @@ impl TryFrom<Type> for TypeJson {
         match value {
             Type::Boolean => Ok(Self::Boolean),
             Type::Integer => Ok(Self::Integer),
+            Type::Cell => Ok(Self::Cell),
             Type::Grid => Ok(Self::Grid),
             Type::IntegerTuple => Ok(Self::IntegerTuple),
             Type::Indices => Ok(Self::Indices),
@@ -182,8 +188,12 @@ impl TryFrom<Type> for TypeJson {
             Type::TupleVector => Ok(Self::TupleVector),
             Type::Callable => Ok(Self::Callable),
             Type::ObjectVector => Ok(Self::ObjectVector),
+            Type::BooleanVector => Ok(Self::BooleanVector),
+            Type::ObjectsVector => Ok(Self::ObjectsVector),
+            Type::IndicesVector => Ok(Self::IndicesVector),
             Type::Objects => Ok(Self::Objects),
             Type::IntegerSet => Ok(Self::IntegerSet),
+            Type::IndicesSet => Ok(Self::IndicesSet),
 
             Type::Function(_) => Err(
                 "Function types require signature serialization"
@@ -200,6 +210,7 @@ impl TryFrom<TypeJson> for Type {
         match value {
             TypeJson::Boolean => Ok(Self::Boolean),
             TypeJson::Integer => Ok(Self::Integer),
+            TypeJson::Cell => Ok(Self::Cell),
             TypeJson::Grid => Ok(Self::Grid),
             TypeJson::IntegerTuple => Ok(Self::IntegerTuple),
             TypeJson::Indices => Ok(Self::Indices),
@@ -211,6 +222,10 @@ impl TryFrom<TypeJson> for Type {
             TypeJson::ObjectVector => Ok(Self::ObjectVector),
             TypeJson::Objects => Ok(Self::Objects),
             TypeJson::IntegerSet => Ok(Self::IntegerSet),
+            TypeJson::IndicesSet => Ok(Self::IndicesSet),
+            TypeJson::BooleanVector => Ok(Self::BooleanVector),
+            TypeJson::ObjectsVector => Ok(Self::ObjectsVector),
+            TypeJson::IndicesVector => Ok(Self::IndicesVector),
         }
     }
 }
@@ -253,6 +268,7 @@ impl From<DynamicPrimitiveJson> for DynamicPrimitive {
 pub enum ValueJson {
     Boolean(Boolean),
     Integer(Integer),
+    Cell(Cell),
     Grid(Grid),
     IntegerTuple(IntegerTuple),
     Indices(Indices),
@@ -263,6 +279,10 @@ pub enum ValueJson {
     ObjectVector(ObjectVector),
     Objects(Objects),
     IntegerSet(IntegerSet),
+    IndicesSet(IndicesSet),
+    BooleanVector(BooleanVector),
+    ObjectsVector(ObjectsVector),
+    IndicesVector(IndicesVector),
 }
 
 impl TryFrom<Value> for ValueJson {
@@ -272,6 +292,7 @@ impl TryFrom<Value> for ValueJson {
         match value {
             Value::Boolean(value) => Ok(Self::Boolean(value)),
             Value::Integer(value) => Ok(Self::Integer(value)),
+            Value::Cell(value) => Ok(Self::Cell(value)),
             Value::Grid(value) => Ok(Self::Grid(value)),
             Value::IntegerTuple(value) => {
                 Ok(Self::IntegerTuple(value))
@@ -292,11 +313,21 @@ impl TryFrom<Value> for ValueJson {
             }
             Value::Objects(value) => Ok(Self::Objects(value)),
             Value::IntegerSet(value) => Ok(Self::IntegerSet(value)),
+            Value::IndicesSet(value) => Ok(Self::IndicesSet(value)),
 
             Value::Function(_) => Err(
                 "Function values require function serialization"
                     .to_string(),
             ),
+            Value::BooleanVector(value) => {
+                Ok(Self::BooleanVector(value))
+            }
+            Value::ObjectsVector(value) => {
+                Ok(Self::ObjectsVector(value))
+            }
+            Value::IndicesVector(value) => {
+                Ok(Self::IndicesVector(value))
+            }
         }
     }
 }
@@ -308,6 +339,7 @@ impl TryFrom<ValueJson> for Value {
         match value {
             ValueJson::Boolean(value) => Ok(Self::Boolean(value)),
             ValueJson::Integer(value) => Ok(Self::Integer(value)),
+            ValueJson::Cell(value) => Ok(Self::Cell(value)),
             ValueJson::Grid(value) => Ok(Self::Grid(value)),
             ValueJson::IntegerTuple(value) => {
                 Ok(Self::IntegerTuple(value))
@@ -328,6 +360,16 @@ impl TryFrom<ValueJson> for Value {
             }
             ValueJson::Objects(value) => Ok(Self::Objects(value)),
             ValueJson::IntegerSet(value) => Ok(Self::IntegerSet(value)),
+            ValueJson::IndicesSet(value) => Ok(Self::IndicesSet(value)),
+            ValueJson::BooleanVector(value) => {
+                Ok(Self::BooleanVector(value))
+            }
+            ValueJson::ObjectsVector(value) => {
+                Ok(Self::ObjectsVector(value))
+            }
+            ValueJson::IndicesVector(value) => {
+                Ok(Self::IndicesVector(value))
+            }
         }
     }
 }
@@ -975,6 +1017,7 @@ impl Connection {
         let name = match &value {
             Value::Boolean(value) => value.to_string(),
             Value::Integer(value) => value.to_string(),
+            Value::Cell(_) => "Cell".to_string(),
             Value::IntegerTuple((a, b)) => {
                 format!("({}, {})", a, b)
             }
@@ -988,6 +1031,10 @@ impl Connection {
             Value::ObjectVector(_) => "ObjectVector".to_string(),
             Value::Objects(_) => "Objects".to_string(),
             Value::IntegerSet(_) => "IntegerSet".to_string(),
+            Value::IndicesSet(_) => "IndicesSet".to_string(),
+            Value::BooleanVector(_) => "BooleanVector".to_string(),
+            Value::ObjectsVector(_) => "ObjectsVector".to_string(),
+            Value::IndicesVector(_) => "IndicesVector".to_string(),
         };
 
         Self::Constant { name, value }
@@ -1261,6 +1308,7 @@ impl Value {
         match self {
             Value::Boolean(_) => Type::Boolean,
             Value::Integer(_) => Type::Integer,
+            Value::Cell(_) => Type::Cell,
             Value::Grid(_) => Type::Grid,
             Value::IntegerTuple(_) => Type::IntegerTuple,
             Value::Indices(_) => Type::Indices,
@@ -1275,6 +1323,10 @@ impl Value {
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
             Value::IntegerSet(_) => Type::IntegerSet,
+            Value::IndicesSet(_) => Type::IndicesSet,
+            Value::BooleanVector(_) => Type::BooleanVector,
+            Value::ObjectsVector(_) => Type::ObjectsVector,
+            Value::IndicesVector(_) => Type::IndicesVector,
         }
     }
 
@@ -1282,6 +1334,7 @@ impl Value {
         match self {
             Value::Boolean(_) => Type::Boolean,
             Value::Integer(_) => Type::Integer,
+            Value::Cell(_) => Type::Cell,
             Value::IntegerTuple(_) => Type::IntegerTuple,
             Value::Grid(_) => Type::Grid,
             Value::Indices(_) => Type::Indices,
@@ -1295,6 +1348,10 @@ impl Value {
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
             Value::IntegerSet(_) => Type::IntegerSet,
+            Value::IndicesSet(_) => Type::IndicesSet,
+            Value::BooleanVector(_) => Type::BooleanVector,
+            Value::ObjectsVector(_) => Type::ObjectsVector,
+            Value::IndicesVector(_) => Type::IndicesVector,
         }
     }
 
@@ -1305,6 +1362,7 @@ impl Value {
         match self {
             Value::Boolean(_) => Type::Boolean,
             Value::Integer(_) => Type::Integer,
+            Value::Cell(_) => Type::Cell,
             Value::IntegerTuple(_) => Type::IntegerTuple,
             Value::Grid(_) => Type::Grid,
             Value::Indices(_) => Type::Indices,
@@ -1324,6 +1382,10 @@ impl Value {
             Value::ObjectVector(_) => Type::ObjectVector,
             Value::Objects(_) => Type::Objects,
             Value::IntegerSet(_) => Type::IntegerSet,
+            Value::IndicesSet(_) => Type::IndicesSet,
+            Value::BooleanVector(_) => Type::BooleanVector,
+            Value::ObjectsVector(_) => Type::ObjectsVector,
+            Value::IndicesVector(_) => Type::IndicesVector,
         }
     }
 }
@@ -1375,7 +1437,7 @@ mod tests {
         );
 
         assert_eq!(depth_1.len(), 69);
-        assert_eq!(depth_2.len(), 152766);
+        assert_eq!(depth_2.len(), 155466);
     }
 
     #[test]
